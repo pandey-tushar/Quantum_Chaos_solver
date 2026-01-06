@@ -1,0 +1,12 @@
+{
+  "n_qubits": 5,
+  "n_layers": 2,
+  "coupling_strength": 0.5,
+  "n_shots": 1024,
+  "alpha_ridge": 1.0,
+  "feature_dim": 32,
+  "train_error": 22.3686590141568,
+  "test_error": 3.1576253972024695,
+  "feature_time": 0.6942672729492188,
+  "train_time": 0.06174898147583008
+}
