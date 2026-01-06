@@ -21,12 +21,19 @@ build/
 *.swp
 *.swo
 
-# Data and results
+# Data and results - Keep final runs and visualizations
 data/*.npy
 data/*.csv
 data/*.pkl
+
+# Exclude experimental runs, keep only final results
 results/*
 !results/.gitkeep
+!results/*.png
+!results/pinn_final/
+!results/pinn_final/**
+!results/reservoir_final/
+!results/reservoir_final/**
 
 # Environment
 .env
