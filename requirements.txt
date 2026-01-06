@@ -1,0 +1,16 @@
+# Quantum Chaos Solver - Dependencies
+# Core quantum computing framework
+qiskit[visualization]==2.2.2
+qiskit-aer==0.17.2
+
+# Numerical computing
+numpy>=1.24.0
+scipy>=1.10.0
+
+# Visualization
+matplotlib>=3.7.0
+plotly>=5.14.0
+
+# Optional: For interactive development
+ipython>=8.12.0
+
