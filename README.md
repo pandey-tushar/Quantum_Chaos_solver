@@ -268,7 +268,7 @@ If you use this code in your research, please cite:
 @software{quantum_chaos_solver_2024,
   author = {Pandey, Tushar},
   title = {Quantum Reservoir Computing for Chaotic Dynamical Systems},
-  year = {2024},
+  year = {2026},
   publisher = {GitHub},
   url = {https://github.com/pandey-tushar/Quantum_Chaos_solver}
 }
