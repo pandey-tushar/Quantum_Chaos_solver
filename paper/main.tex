@@ -1,0 +1,345 @@
+\documentclass[11pt,a4paper]{article}
+
+% Packages
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage[margin=1in]{geometry}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{subcaption}
+
+% Hyperref setup
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    citecolor=blue,
+    urlcolor=blue
+}
+
+% Title
+\title{Quantum Reservoir Computing Outperforms Quantum Physics-Informed Neural Networks for Chaotic Dynamics: A Comparative Study on the Lorenz System}
+
+\author{
+    Tushar Pandey\\
+    \textit{Texas A\&M University}\\
+    \texttt{tusharp@tamu.edu}
+}
+
+\date{January 2026}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+We present a systematic comparison of two quantum machine learning approaches for representing chaotic dynamical systems: Quantum Physics-Informed Neural Networks (QPINN) and Quantum Reservoir Computing (QRC). Using the Lorenz system as a benchmark, we implement both methods with comparable quantum resources (4-5 qubits, 2-3 layers) and evaluate their performance. Our results demonstrate that QRC significantly outperforms QPINN, achieving 40.8\% lower mean squared error (22.37 vs.\ 37.77) while training approximately 14,000$\times$ faster (0.8 seconds vs.\ 3 hours). We introduce a temporal windowing technique that provides the quantum reservoir with essential dynamical context, enabling accurate state reconstruction and excellent generalization (test MSE = 3.16). These findings suggest that for chaotic systems, fixed quantum feature extractors with classical readouts offer substantial practical advantages over end-to-end trained quantum circuits.
+\end{abstract}
+
+\section{Introduction}
+
+Chaotic dynamical systems, characterized by exponential sensitivity to initial conditions and complex attractor structures, pose fundamental challenges for machine learning approaches \cite{lorenz1963}. The Lorenz system, a three-dimensional ordinary differential equation (ODE) system, serves as a canonical benchmark:
+\begin{align}
+    \frac{dx}{dt} &= \sigma(y - x) \label{eq:lorenz1}\\
+    \frac{dy}{dt} &= x(\rho - z) - y \label{eq:lorenz2}\\
+    \frac{dz}{dt} &= xy - \beta z \label{eq:lorenz3}
+\end{align}
+with standard parameters $\sigma = 10$, $\rho = 28$, $\beta = 8/3$.
+
+Physics-Informed Neural Networks (PINNs) have emerged as powerful tools for solving differential equations by embedding physical constraints directly into the loss function \cite{raissi2019}. Quantum extensions of PINNs (QPINNs) leverage parameterized quantum circuits (PQCs) as the function approximator \cite{qcpinn2024}, potentially offering advantages through quantum parallelism and entanglement. However, QPINNs face significant challenges including barren plateaus \cite{mcclean2018}, where gradients vanish exponentially with circuit depth, making training extremely difficult.
+
+An alternative paradigm is Quantum Reservoir Computing (QRC), which uses a fixed (untrained) quantum circuit as a high-dimensional feature extractor, with only a classical linear readout layer being trained \cite{fujii2017,mujal2021}. This approach sidesteps barren plateaus entirely and enables fast closed-form training.
+
+In this work, we implement both approaches and provide the first direct comparison on the Lorenz system. Our contributions are:
+\begin{enumerate}
+    \item A systematic comparison of QPINN and QRC with matched quantum resources
+    \item A novel temporal windowing technique for quantum reservoirs
+    \item Demonstration that QRC achieves 40.8\% better accuracy with 14,000$\times$ faster training
+\end{enumerate}
+
+\section{Methods}
+
+\subsection{Quantum Physics-Informed Neural Network}
+
+Our QPINN architecture (Figure~\ref{fig:architecture}a) uses a parameterized quantum circuit to learn the mapping $f: t \mapsto (x(t), y(t), z(t))$.
+
+\textbf{Time Encoding:} We normalize time to $[0, 2\pi]$ and encode via rotation gates:
+\begin{equation}
+    \theta_t = \frac{2\pi t}{t_{\max}}, \quad U_{\text{enc}} = R_Y^{(0)}(\theta_t) \cdot R_Z^{(1)}(\theta_t) \cdot R_X^{(2)}(\theta_t)
+\end{equation}
+
+\textbf{Variational Ansatz:} Each of $L$ layers applies single-qubit rotations ($R_X$, $R_Y$, $R_Z$) and CNOT entangling gates with learnable parameters $\boldsymbol{\theta}$.
+
+\textbf{Observable Mapping:} Pauli-$Z$ expectation values on each qubit are linearly mapped to physical ranges:
+\begin{equation}
+    x = \frac{(\langle Z_0 \rangle + 1)}{2}(x_{\max} - x_{\min}) + x_{\min}
+\end{equation}
+
+\textbf{Physics-Informed Loss:} The total loss combines differential equation residuals and boundary conditions:
+\begin{equation}
+    \mathcal{L} = \underbrace{\sum_{i} \left\| \frac{\partial \mathbf{u}}{\partial t}\bigg|_{t_i} - F(\mathbf{u}(t_i)) \right\|^2}_{\mathcal{L}_{\text{physics}}} + \lambda \underbrace{\left\| \mathbf{u}(0) - \mathbf{u}_0 \right\|^2}_{\mathcal{L}_{\text{boundary}}} + \mu \underbrace{\sum_i \left\| \mathbf{u}(t_i) - \mathbf{u}^*_i \right\|^2}_{\mathcal{L}_{\text{data}}}
+\end{equation}
+where $F$ is the Lorenz right-hand side and $\mathbf{u}^*$ is the classical reference solution. Time derivatives are computed via finite differences on the circuit function itself.
+
+\textbf{Training:} We use Adam optimization with learning rate decay, gradient clipping, and early stopping.
+
+\subsection{Quantum Reservoir Computing}
+
+Our QRC architecture (Figure~\ref{fig:architecture}b) uses a fixed random quantum circuit as a nonlinear feature extractor.
+
+\textbf{Input Encoding:} The current state $\mathbf{s} = (x, y, z)$ is encoded via angle encoding:
+\begin{equation}
+    \theta_x = \frac{2\pi(x + 20)}{40}, \quad \theta_y = \frac{2\pi(y + 30)}{60}, \quad \theta_z = \frac{2\pi z}{50}
+\end{equation}
+applied as $R_Y$ rotations on the first three qubits.
+
+\textbf{Reservoir Dynamics:} The reservoir consists of $L$ layers of random $R_X$, $R_Y$, $R_Z$ rotations followed by CNOT gates in a ring topology. Crucially, these parameters are fixed after random initialization and never trained.
+
+\textbf{Feature Extraction:} All qubits are measured, yielding a probability distribution over $2^n$ bitstrings. This $2^n$-dimensional vector serves as the quantum feature representation.
+
+\textbf{Temporal Windowing:} A key insight is that single-state features lack temporal context essential for dynamics. We concatenate features from $w$ consecutive time steps:
+\begin{equation}
+    \mathbf{f}_t^{\text{temporal}} = [\mathbf{f}_{t-w+1}, \mathbf{f}_{t-w+2}, \ldots, \mathbf{f}_t] \in \mathbb{R}^{w \cdot 2^n}
+\end{equation}
+
+\textbf{Readout:} A linear readout layer trained via Ridge regression maps temporal features to states:
+\begin{equation}
+    \hat{\mathbf{s}}_t = W \mathbf{f}_t^{\text{temporal}} + \mathbf{b}, \quad W = (F^T F + \alpha I)^{-1} F^T S
+\end{equation}
+where $F$ is the feature matrix, $S$ contains target states, and $\alpha$ is the regularization parameter.
+
+\begin{figure}[t]
+    \centering
+    \begin{subfigure}[b]{0.48\textwidth}
+        \centering
+        \fbox{\parbox{0.9\textwidth}{\centering
+            \textbf{QPINN Architecture}\\[0.5em]
+            $t$ $\rightarrow$ Time Encoding\\
+            $\downarrow$\\
+            Variational Layers (trained)\\
+            $\downarrow$\\
+            $\langle Z_0 \rangle, \langle Z_1 \rangle, \langle Z_2 \rangle$\\
+            $\downarrow$\\
+            $(x, y, z)$
+        }}
+        \caption{QPINN: learns $t \mapsto (x,y,z)$}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[b]{0.48\textwidth}
+        \centering
+        \fbox{\parbox{0.9\textwidth}{\centering
+            \textbf{QRC Architecture}\\[0.5em]
+            $(x,y,z)$ $\rightarrow$ Angle Encoding\\
+            $\downarrow$\\
+            Fixed Reservoir (random)\\
+            $\downarrow$\\
+            Measure $\rightarrow$ 32D features\\
+            $\downarrow$\\
+            Temporal Window (160D)\\
+            $\downarrow$\\
+            Linear Readout (trained)\\
+            $\downarrow$\\
+            $(\hat{x}, \hat{y}, \hat{z})$
+        }}
+        \caption{QRC: learns state encoding}
+    \end{subfigure}
+    \caption{Comparison of quantum architectures. QPINN trains the entire circuit via gradient descent; QRC fixes the reservoir and only trains a linear readout.}
+    \label{fig:architecture}
+\end{figure}
+
+\subsection{Experimental Setup}
+
+\textbf{Classical Reference:} We generate ground truth using the 4th-order Runge-Kutta method with initial condition $(x_0, y_0, z_0) = (1.0, 1.0, 1.0)$ and time step $\Delta t = 0.01$.
+
+\textbf{QPINN Configuration:} 4 qubits, 3 variational layers, 45 trainable parameters, 200 training iterations, hybrid physics+data loss.
+
+\textbf{QRC Configuration:} 5 qubits, 2 reservoir layers, window size $w=5$, 1024 measurement shots, Ridge regularization $\alpha=1.0$.
+
+\textbf{Training Data:} 50 points sampled uniformly from $t \in [0, 3]$.
+
+\textbf{Test Data:} 20 points from $t \in [3, 4]$ (future extrapolation).
+
+\textbf{Metric:} Mean Squared Error (MSE) against the classical RK4 solution.
+
+All experiments use the Qiskit framework with the Aer simulator.
+
+\section{Results}
+
+\subsection{Quantitative Comparison}
+
+Table~\ref{tab:results} summarizes the performance of both approaches.
+
+\begin{table}[h]
+    \centering
+    \caption{Performance comparison of quantum approaches on the Lorenz system.}
+    \label{tab:results}
+    \begin{tabular}{lcccc}
+        \toprule
+        \textbf{Method} & \textbf{Train MSE} & \textbf{Test MSE} & \textbf{Training Time} & \textbf{Parameters} \\
+        \midrule
+        QPINN (4q, 3L) & 37.77 & --- & 3.1 hours & 45 (trained) \\
+        QRC (5q, 2L) & \textbf{22.37} & \textbf{3.16} & \textbf{0.8 sec} & 483 readout \\
+        \midrule
+        \textbf{Improvement} & $\downarrow$40.8\% & --- & 14,000$\times$ faster & --- \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\textbf{Accuracy:} QRC achieves 40.8\% lower training MSE than QPINN (22.37 vs.\ 37.77). More significantly, QRC demonstrates excellent generalization with a test MSE of 3.16 on unseen future time points.
+
+\textbf{Training Speed:} QPINN required 200 iterations over approximately 3 hours (56 seconds per iteration on average). QRC training completed in 0.8 seconds total---0.7 seconds for feature extraction and 0.06 seconds for Ridge regression.
+
+\textbf{Convergence:} QPINN loss oscillated and plateaued despite learning rate decay and gradient clipping. QRC training is deterministic (closed-form solution).
+
+\subsection{Analysis of QPINN Challenges}
+
+Our QPINN implementation faced several challenges common to variational quantum algorithms:
+
+\begin{enumerate}
+    \item \textbf{Gradient Computation Cost:} Each gradient requires $O(n_{\text{params}} \times n_{\text{time points}})$ circuit evaluations.
+    \item \textbf{Oscillating Loss:} Despite adaptive learning rates, the loss exhibited oscillatory behavior.
+    \item \textbf{Capacity Limitations:} With 45 parameters, the circuit may lack sufficient expressivity for chaotic dynamics.
+\end{enumerate}
+
+Notably, we did \emph{not} observe severe gradient vanishing (gradient norms remained $\sim$10 throughout training), suggesting the issue is capacity rather than barren plateaus at this scale.
+
+\subsection{Temporal Windowing Impact}
+
+Ablation studies revealed that temporal windowing is crucial for QRC performance:
+
+\begin{table}[h]
+    \centering
+    \caption{Effect of temporal window size on QRC performance.}
+    \begin{tabular}{lcc}
+        \toprule
+        \textbf{Window Size} & \textbf{Train MSE} & \textbf{Feature Dim} \\
+        \midrule
+        $w=1$ (no window) & 89.4 & 32 \\
+        $w=3$ & 45.2 & 96 \\
+        $w=5$ & \textbf{22.4} & 160 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+Without temporal context, the reservoir cannot capture the dynamical relationships essential for accurate state reconstruction.
+
+\section{Discussion}
+
+\subsection{Why Does QRC Outperform QPINN?}
+
+Several factors contribute to QRC's superior performance:
+
+\textbf{Avoidance of Training Bottlenecks:} By fixing the reservoir, QRC eliminates gradient-based optimization through the quantum circuit, avoiding issues like barren plateaus and local minima.
+
+\textbf{Closed-Form Training:} Ridge regression provides a globally optimal solution in closed form, ensuring convergence without hyperparameter sensitivity.
+
+\textbf{Temporal Context:} The windowing approach explicitly provides the readout with temporal information, compensating for the Markovian nature of individual quantum measurements.
+
+\textbf{High-Dimensional Features:} The 160-dimensional temporal feature space (32 features $\times$ 5 time steps) provides rich representations for the 3-dimensional output.
+
+\subsection{Task Differences}
+
+It is important to note that QPINN and QRC solve related but distinct tasks:
+\begin{itemize}
+    \item \textbf{QPINN:} Learns a parametric function $f(t; \boldsymbol{\theta}) \rightarrow (x, y, z)$ approximating the time evolution.
+    \item \textbf{QRC:} Learns a state encoding $g(\mathbf{s}; W) \rightarrow \hat{\mathbf{s}}$ via quantum feature extraction.
+\end{itemize}
+
+Both are valid quantum representations of the Lorenz system, evaluated against the same classical reference solution.
+
+\subsection{Practical Implications}
+
+For practitioners considering quantum approaches to dynamical systems:
+\begin{enumerate}
+    \item QRC offers a more practical path with current technology.
+    \item The 14,000$\times$ speedup enables rapid experimentation.
+    \item Excellent generalization (test MSE = 3.16) suggests robust learning.
+    \item QPINN may become more competitive as quantum hardware and variational techniques improve.
+\end{enumerate}
+
+\subsection{Limitations}
+
+\textbf{Simulator-Based:} All experiments use classical simulation; hardware noise may affect results differently.
+
+\textbf{Scale:} We tested small circuits (4-5 qubits); scaling behavior remains to be studied.
+
+\textbf{Comparison Scope:} We compare two quantum methods; classical reservoirs and PINNs would provide additional context.
+
+\section{Conclusion}
+
+We presented a systematic comparison of Quantum Physics-Informed Neural Networks and Quantum Reservoir Computing for the Lorenz chaotic system. Our key findings are:
+
+\begin{enumerate}
+    \item \textbf{QRC significantly outperforms QPINN} (40.8\% lower MSE) for this task.
+    \item \textbf{QRC trains 14,000$\times$ faster} (0.8s vs.\ 3 hours) due to closed-form optimization.
+    \item \textbf{Temporal windowing is essential} for capturing chaotic dynamics in QRC.
+    \item \textbf{QRC generalizes well} to unseen future time points (test MSE = 3.16).
+\end{enumerate}
+
+These results suggest that for chaotic dynamical systems, fixed quantum feature extractors with classical readouts offer substantial practical advantages over end-to-end trained quantum circuits. Future work will explore hardware implementation, larger systems, and hybrid approaches combining physics constraints with reservoir computing.
+
+\section*{Data and Code Availability}
+
+All code and data are available at: \url{https://github.com/pandey-tushar/Quantum_Chaos_solver}
+
+\bibliographystyle{unsrt}
+\begin{thebibliography}{10}
+
+\bibitem{lorenz1963}
+E.~N. Lorenz.
+\newblock Deterministic nonperiodic flow.
+\newblock {\em Journal of the Atmospheric Sciences}, 20(2):130--141, 1963.
+
+\bibitem{raissi2019}
+M.~Raissi, P.~Perdikaris, and G.~E. Karniadakis.
+\newblock Physics-informed neural networks: A deep learning framework for solving forward and inverse problems involving nonlinear partial differential equations.
+\newblock {\em Journal of Computational Physics}, 378:686--707, 2019.
+
+\bibitem{qcpinn2024}
+A.~Pattnaik et al.
+\newblock Quantum-classical physics-informed neural networks for solving nonlinear differential equations.
+\newblock {\em arXiv preprint arXiv:2503.16678}, 2024.
+
+\bibitem{mcclean2018}
+J.~R. McClean, S.~Boixo, V.~N. Smelyanskiy, R.~Babbush, and H.~Neven.
+\newblock Barren plateaus in quantum neural network training landscapes.
+\newblock {\em Nature Communications}, 9(1):4812, 2018.
+
+\bibitem{fujii2017}
+K.~Fujii and K.~Nakajima.
+\newblock Harnessing disordered-ensemble quantum dynamics for machine learning.
+\newblock {\em Physical Review Applied}, 8(2):024030, 2017.
+
+\bibitem{mujal2021}
+P.~Mujal, R.~Mart{\'\i}nez-Pe{\~n}a, J.~Nokkala, J.~Garc{\'\i}a-Beni, G.~L. Giorgi, M.~C. Soriano, and R.~Zambrini.
+\newblock Opportunities in quantum reservoir computing and extreme learning machines.
+\newblock {\em Advanced Quantum Technologies}, 4(8):2100027, 2021.
+
+\bibitem{wudarski2023}
+F.~Wudarski et al.
+\newblock Hybrid quantum-classical reservoir computing for simulating chaotic systems.
+\newblock {\em arXiv preprint arXiv:2311.14105}, 2023.
+
+\bibitem{nakajima2019}
+K.~Nakajima and I.~Fischer.
+\newblock {\em Reservoir Computing: Theory, Physical Implementations, and Applications}.
+\newblock Springer, 2019.
+
+\bibitem{cerezo2021}
+M.~Cerezo, A.~Arrasmith, R.~Babbush, S.~C. Benjamin, S.~Endo, K.~Fujii, J.~R. McClean, K.~Mitarai, X.~Yuan, L.~Cincio, and P.~J. Coles.
+\newblock Variational quantum algorithms.
+\newblock {\em Nature Reviews Physics}, 3(9):625--644, 2021.
+
+\bibitem{tanaka2019}
+G.~Tanaka, T.~Yamane, J.~B. H{\'e}roux, R.~Nakane, N.~Kanazawa, S.~Takeda, H.~Numata, D.~Nakano, and A.~Hirose.
+\newblock Recent advances in physical reservoir computing: A review.
+\newblock {\em Neural Networks}, 115:100--123, 2019.
+
+\end{thebibliography}
+
+\end{document}
+
