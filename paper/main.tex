@@ -83,7 +83,7 @@ Our QPINN architecture (Figure~\ref{fig:architecture}a) uses a parameterized qua
 \begin{equation}
     \mathcal{L} = \underbrace{\sum_{i} \left\| \frac{\partial \mathbf{u}}{\partial t}\bigg|_{t_i} - F(\mathbf{u}(t_i)) \right\|^2}_{\mathcal{L}_{\text{physics}}} + \lambda \underbrace{\left\| \mathbf{u}(0) - \mathbf{u}_0 \right\|^2}_{\mathcal{L}_{\text{boundary}}} + \mu \underbrace{\sum_i \left\| \mathbf{u}(t_i) - \mathbf{u}^*_i \right\|^2}_{\mathcal{L}_{\text{data}}}
 \end{equation}
-where $F$ is the Lorenz right-hand side and $\mathbf{u}^*$ is the classical reference solution. Time derivatives are computed via finite differences on the circuit function itself.
+where $F$ is the Lorenz right-hand side and $\mathbf{u}^*$ is the reference solution. Time derivatives are computed via finite differences on the circuit function itself.
 
 \textbf{Training:} We use Adam optimization with learning rate decay, gradient clipping, and early stopping.
 
@@ -111,6 +111,13 @@ applied as $R_Y$ rotations on the first three qubits.
     \hat{\mathbf{s}}_t = W \mathbf{f}_t^{\text{temporal}} + \mathbf{b}, \quad W = (F^T F + \alpha I)^{-1} F^T S
 \end{equation}
 where $F$ is the feature matrix, $S$ contains target states, and $\alpha$ is the regularization parameter.
+
+\begin{figure}[t]
+    \centering
+    \includegraphics[width=\textwidth]{fig1_trajectory.pdf}
+    \caption{Quantum Reservoir Computing predictions on the Lorenz system. (a) 3D view of the Lorenz attractor showing the reference trajectory and QRC predictions. (b) Time series comparison of the $x$ and $y$ components (offset for clarity), demonstrating accurate tracking of chaotic dynamics.}
+    \label{fig:trajectory}
+\end{figure}
 
 \begin{figure}[t]
     \centering
@@ -153,7 +160,7 @@ where $F$ is the feature matrix, $S$ contains target states, and $\alpha$ is the
 
 \subsection{Experimental Setup}
 
-\textbf{Classical Reference:} We generate ground truth using the 4th-order Runge-Kutta method with initial condition $(x_0, y_0, z_0) = (1.0, 1.0, 1.0)$ and time step $\Delta t = 0.01$.
+\textbf{Reference Data:} We generate ground truth using numerical integration with initial condition $(x_0, y_0, z_0) = (1.0, 1.0, 1.0)$ and time step $\Delta t = 0.01$.
 
 \textbf{QPINN Configuration:} 4 qubits, 3 variational layers, 45 trainable parameters, 200 training iterations, hybrid physics+data loss.
 
@@ -163,7 +170,7 @@ where $F$ is the feature matrix, $S$ contains target states, and $\alpha$ is the
 
 \textbf{Test Data:} 20 points from $t \in [3, 4]$ (future extrapolation).
 
-\textbf{Metric:} Mean Squared Error (MSE) against the classical RK4 solution.
+\textbf{Metric:} Mean Squared Error (MSE) against the reference solution.
 
 All experiments use the Qiskit framework with the Aer simulator.
 
@@ -195,9 +202,16 @@ Table~\ref{tab:results} summarizes the performance of both approaches.
 
 \textbf{Convergence:} QPINN loss oscillated and plateaued despite learning rate decay and gradient clipping. QRC training is deterministic (closed-form solution).
 
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=\textwidth]{fig4_comparison.pdf}
+    \caption{Summary comparison of QPINN and QRC. (a) Accuracy: QRC achieves 40.8\% lower MSE. (b) Training speed: QRC is approximately 14,000$\times$ faster due to closed-form Ridge regression.}
+    \label{fig:comparison}
+\end{figure}
+
 \subsection{Analysis of QPINN Challenges}
 
-Our QPINN implementation faced several challenges common to variational quantum algorithms:
+Our QPINN implementation faced several challenges common to variational quantum algorithms (Figure~\ref{fig:training}):
 
 \begin{enumerate}
     \item \textbf{Gradient Computation Cost:} Each gradient requires $O(n_{\text{params}} \times n_{\text{time points}})$ circuit evaluations.
@@ -205,25 +219,40 @@ Our QPINN implementation faced several challenges common to variational quantum 
     \item \textbf{Capacity Limitations:} With 45 parameters, the circuit may lack sufficient expressivity for chaotic dynamics.
 \end{enumerate}
 
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=\textwidth]{fig2_training.pdf}
+    \caption{QPINN training dynamics over 200 iterations. (a) Loss components showing oscillatory behavior and convergence to MSE $\approx$ 37.8. (b) Gradient magnitude remains non-vanishing ($\sim$10), indicating capacity limitations rather than barren plateaus.}
+    \label{fig:training}
+\end{figure}
+
 Notably, we did \emph{not} observe severe gradient vanishing (gradient norms remained $\sim$10 throughout training), suggesting the issue is capacity rather than barren plateaus at this scale.
 
 \subsection{Temporal Windowing Impact}
 
-Ablation studies revealed that temporal windowing is crucial for QRC performance:
+Ablation studies revealed that temporal windowing is crucial for QRC performance (Figure~\ref{fig:ablation}):
 
 \begin{table}[h]
     \centering
     \caption{Effect of temporal window size on QRC performance.}
+    \label{tab:ablation}
     \begin{tabular}{lcc}
         \toprule
         \textbf{Window Size} & \textbf{Train MSE} & \textbf{Feature Dim} \\
         \midrule
-        $w=1$ (no window) & 89.4 & 32 \\
-        $w=3$ & 45.2 & 96 \\
-        $w=5$ & \textbf{22.4} & 160 \\
+        $w=1$ (no window) & 48.0 & 32 \\
+        $w=3$ & 32.6 & 96 \\
+        $w=5$ & \textbf{22.1} & 160 \\
         \bottomrule
     \end{tabular}
 \end{table}
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.6\textwidth]{fig3_ablation.pdf}
+    \caption{Ablation study showing the effect of temporal window size on QRC performance. Larger windows provide more temporal context, improving accuracy by 54\% from $w=1$ to $w=5$.}
+    \label{fig:ablation}
+\end{figure}
 
 Without temporal context, the reservoir cannot capture the dynamical relationships essential for accurate state reconstruction.
 
@@ -249,7 +278,7 @@ It is important to note that QPINN and QRC solve related but distinct tasks:
     \item \textbf{QRC:} Learns a state encoding $g(\mathbf{s}; W) \rightarrow \hat{\mathbf{s}}$ via quantum feature extraction.
 \end{itemize}
 
-Both are valid quantum representations of the Lorenz system, evaluated against the same classical reference solution.
+Both are valid quantum representations of the Lorenz system, evaluated against the same reference solution.
 
 \subsection{Practical Implications}
 
@@ -267,7 +296,7 @@ For practitioners considering quantum approaches to dynamical systems:
 
 \textbf{Scale:} We tested small circuits (4-5 qubits); scaling behavior remains to be studied.
 
-\textbf{Comparison Scope:} We compare two quantum methods; classical reservoirs and PINNs would provide additional context.
+\textbf{Comparison Scope:} We focus on comparing two quantum methods on a single benchmark system.
 
 \section{Conclusion}
 
