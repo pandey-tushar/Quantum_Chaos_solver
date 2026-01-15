@@ -39,3 +39,12 @@ results/*
 .env
 .venv
 
+# LaTeX build files
+paper/*.pdf
+paper/*.aux
+paper/*.log
+paper/*.out
+paper/*.toc
+paper/*.bbl
+paper/*.blg
+
