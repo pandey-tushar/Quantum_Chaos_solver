@@ -1,0 +1,51 @@
+{
+  "method": "Classical ESN (N=500)",
+  "config": {
+    "n_reservoir": 500,
+    "spectral_radius": 0.9,
+    "input_scaling": 0.1,
+    "leaking_rate": 0.3,
+    "ridge_alpha": 1.0,
+    "window": 5,
+    "n_train": 50,
+    "n_test": 20
+  },
+  "per_seed": [
+    {
+      "seed": 0,
+      "train_mse": 0.10381713254698534,
+      "test_mse": 2.0800840483313077,
+      "train_time": 1.7422282695770264
+    },
+    {
+      "seed": 1,
+      "train_mse": 0.10555231650946952,
+      "test_mse": 2.146315008137676,
+      "train_time": 0.6335453987121582
+    },
+    {
+      "seed": 2,
+      "train_mse": 0.09546227566682551,
+      "test_mse": 2.0558341142882997,
+      "train_time": 0.6836652755737305
+    },
+    {
+      "seed": 3,
+      "train_mse": 0.09841277701203276,
+      "test_mse": 2.050019023785618,
+      "train_time": 1.0427768230438232
+    },
+    {
+      "seed": 4,
+      "train_mse": 0.10200222864230114,
+      "test_mse": 2.080451565765607,
+      "train_time": 0.9838685989379883
+    }
+  ],
+  "train_mse_mean": 0.10104934607552285,
+  "train_mse_std": 0.0036609349091447406,
+  "test_mse_mean": 2.0825407520617016,
+  "test_mse_std": 0.03420076941200523,
+  "train_time_mean_s": 1.0172168731689453,
+  "train_time_std_s": 0.396451109702962
+}

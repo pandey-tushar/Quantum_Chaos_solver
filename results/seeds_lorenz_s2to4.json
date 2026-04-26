@@ -1,0 +1,55 @@
+{
+  "system": "lorenz",
+  "n_seeds": 5,
+  "start_seed": 2,
+  "qrc_config": {
+    "qubits": 5,
+    "layers": 2,
+    "window": 5
+  },
+  "qpinn_config": {
+    "qubits": 4,
+    "layers": 3,
+    "iters": 200
+  },
+  "qrc_results": [
+    {
+      "seed": 2,
+      "train_mse": 18.554297131167367,
+      "test_mse": 2.765510895618356,
+      "time_s": 0.2783646583557129
+    },
+    {
+      "seed": 3,
+      "train_mse": 22.598428452058986,
+      "test_mse": 3.24036189604247,
+      "time_s": 0.24051475524902344
+    },
+    {
+      "seed": 4,
+      "train_mse": 14.460180778861725,
+      "test_mse": 4.2111558456323674,
+      "time_s": 0.21401548385620117
+    }
+  ],
+  "qpinn_results": [
+    {
+      "seed": 2,
+      "train_mse": NaN,
+      "test_mse": NaN,
+      "time_s": NaN
+    },
+    {
+      "seed": 3,
+      "train_mse": NaN,
+      "test_mse": NaN,
+      "time_s": NaN
+    },
+    {
+      "seed": 4,
+      "train_mse": NaN,
+      "test_mse": NaN,
+      "time_s": NaN
+    }
+  ]
+}

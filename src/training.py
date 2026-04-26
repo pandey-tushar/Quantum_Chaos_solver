@@ -222,7 +222,7 @@ class TrainingMonitor:
               f"Loss: {loss_total:10.4f} | "
               f"L_diff: {loss_diff:8.4f} | "
               f"L_bnd: {loss_boundary:8.4f} | "
-              f"||∇||: {grad_norm:8.4f} | "
+              f"||grad||: {grad_norm:8.4f} | "
               f"Time: {elapsed:6.1f}s")
 
 

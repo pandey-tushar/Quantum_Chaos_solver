@@ -1,0 +1,43 @@
+{
+  "system": "lorenz",
+  "n_seeds": 4,
+  "start_seed": 2,
+  "qrc_config": {
+    "qubits": 5,
+    "layers": 2,
+    "window": 5
+  },
+  "qpinn_config": {
+    "qubits": 4,
+    "layers": 3,
+    "iters": 200
+  },
+  "qrc_results": [
+    {
+      "seed": 2,
+      "train_mse": 18.554297131167367,
+      "test_mse": 2.765510895618356,
+      "time_s": 0.5740091800689697
+    },
+    {
+      "seed": 3,
+      "train_mse": 22.598428452058986,
+      "test_mse": 3.24036189604247,
+      "time_s": 0.10806417465209961
+    }
+  ],
+  "qpinn_results": [
+    {
+      "seed": 2,
+      "train_mse": 114.63006575549295,
+      "test_mse": 84.19816467862317,
+      "time_s": 7999.013813972473
+    },
+    {
+      "seed": 3,
+      "train_mse": 64.25983506116683,
+      "test_mse": 11.041663646750793,
+      "time_s": 7863.942476272583
+    }
+  ]
+}

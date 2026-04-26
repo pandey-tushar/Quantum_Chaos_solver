@@ -214,61 +214,70 @@ def fig3_ablation():
 
 def fig4_comparison_summary():
     """
-    Figure 4: Summary comparison bar chart.
+    Figure 4: Summary comparison bar chart — 4 matched seeds, with error bars.
+    QPINN: train 90.7 ± 25.3, test 44.7 ± 41.4, time ~2.4h
+    QRC:   train 17.8 ± 3.9,  test 3.0  ± 0.2,  time ~0.2s
     """
-    print("Generating Figure 4: Method comparison...")
-    
+    print("Generating Figure 4: Method comparison (4-seed)...")
+
     fig, axes = plt.subplots(1, 2, figsize=(10, 4))
-    
+
     methods = ['QPINN\n(4q, 3L)', 'QRC\n(5q, 2L)']
-    mses = [37.77, 22.37]
-    times = [3.1 * 3600, 0.8]  # Convert hours to seconds for PINN
-    
-    # MSE comparison
-    ax1 = axes[0]
+    # 4-seed means and standard deviations (train MSE)
+    train_means = [90.7, 17.8]
+    train_stds  = [25.3,  3.9]
+    # Training times (mean per seed)
+    times = [2.4 * 3600, 0.2]   # seconds
+
     colors = ['#ff6b6b', '#48dbfb']
-    bars1 = ax1.bar(methods, mses, color=colors, edgecolor='black', linewidth=1.5)
-    
-    for bar, mse in zip(bars1, mses):
+
+    # --- (a) Train MSE with error bars ---
+    ax1 = axes[0]
+    bars1 = ax1.bar(methods, train_means, yerr=train_stds,
+                    color=colors, edgecolor='black', linewidth=1.5,
+                    capsize=8, error_kw=dict(elinewidth=2, ecolor='black'))
+
+    for bar, mean, std in zip(bars1, train_means, train_stds):
         height = bar.get_height()
-        ax1.text(bar.get_x() + bar.get_width()/2., height + 1,
-                f'{mse:.1f}', ha='center', va='bottom', fontweight='bold', fontsize=12)
-    
-    ax1.set_ylabel('Mean Squared Error')
+        ax1.text(bar.get_x() + bar.get_width()/2., height + std + 2,
+                 f'{mean:.1f}±{std:.1f}', ha='center', va='bottom',
+                 fontweight='bold', fontsize=10)
+
+    ax1.set_ylabel('Train MSE (mean ± σ, 4 seeds)')
     ax1.set_title('(a) Accuracy Comparison')
-    ax1.set_ylim(0, max(mses) * 1.3)
+    ax1.set_ylim(0, (max(train_means) + max(train_stds)) * 1.35)
     ax1.grid(axis='y', alpha=0.3)
-    
-    # Add improvement annotation
-    improvement = (mses[0] - mses[1]) / mses[0] * 100
-    ax1.annotate(f'↓{improvement:.1f}%', xy=(1, mses[1]), xytext=(0.5, mses[0]*0.6),
-                fontsize=14, color='green', fontweight='bold',
-                arrowprops=dict(arrowstyle='->', color='green', lw=2))
-    
-    # Time comparison (log scale)
+
+    improvement = (train_means[0] - train_means[1]) / train_means[0] * 100
+    ax1.annotate(f'↓{improvement:.0f}%',
+                 xy=(1, train_means[1]), xytext=(0.5, train_means[0] * 0.55),
+                 fontsize=14, color='green', fontweight='bold',
+                 arrowprops=dict(arrowstyle='->', color='green', lw=2))
+
+    # --- (b) Training time (log scale) ---
     ax2 = axes[1]
     bars2 = ax2.bar(methods, times, color=colors, edgecolor='black', linewidth=1.5)
     ax2.set_yscale('log')
-    
-    # Add time labels
-    time_labels = ['3.1 hours', '0.8 sec']
+
+    time_labels = ['~2.4 hours', '~0.2 sec']
     for bar, label in zip(bars2, time_labels):
         height = bar.get_height()
         ax2.text(bar.get_x() + bar.get_width()/2., height * 1.5,
-                label, ha='center', va='bottom', fontweight='bold', fontsize=11)
-    
+                 label, ha='center', va='bottom', fontweight='bold', fontsize=11)
+
     ax2.set_ylabel('Training Time (seconds, log scale)')
     ax2.set_title('(b) Training Speed Comparison')
     ax2.grid(axis='y', alpha=0.3)
-    
-    # Add speedup annotation
+
     speedup = times[0] / times[1]
-    ax2.annotate(f'{speedup:.0f}× faster', xy=(1, times[1]), xytext=(0.5, times[0]*0.1),
-                fontsize=14, color='green', fontweight='bold',
-                arrowprops=dict(arrowstyle='->', color='green', lw=2))
-    
+    ax2.annotate(f'~{speedup/1000:.0f}k× faster',
+                 xy=(1, times[1]), xytext=(0.5, times[0] * 0.1),
+                 fontsize=14, color='green', fontweight='bold',
+                 arrowprops=dict(arrowstyle='->', color='green', lw=2))
+
+    fig.suptitle('QPINN vs QRC — 4 matched seeds', fontsize=11, style='italic', y=1.01)
     plt.tight_layout()
-    
+
     output_path = project_root / "paper" / "fig4_comparison.pdf"
     plt.savefig(output_path, dpi=300, bbox_inches='tight')
     plt.savefig(output_path.with_suffix('.png'), dpi=150, bbox_inches='tight')
