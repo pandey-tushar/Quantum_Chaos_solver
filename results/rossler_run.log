@@ -1,0 +1,47 @@
+
+============================================================
+  Multi-seed benchmark: ROSSLER, 10 seeds
+  QRC:   5q, 2L, window=5
+  QPINN: 4q, 3L, 200 iters
+  Estimated wall time: ~30h (QPINN) + <5min (QRC)
+============================================================
+
+
+-- Seed 1/10 --
+  QRC... train_mse=0.136, test_mse=1.738, t=0.1s
+
+-- Seed 2/10 --
+  QRC... train_mse=0.093, test_mse=1.860, t=0.1s
+
+-- Seed 3/10 --
+  QRC... train_mse=0.248, test_mse=1.809, t=0.1s
+
+-- Seed 4/10 --
+  QRC... train_mse=0.244, test_mse=1.622, t=0.1s
+
+-- Seed 5/10 --
+  QRC... train_mse=0.155, test_mse=2.004, t=0.1s
+
+-- Seed 6/10 --
+  QRC... train_mse=0.148, test_mse=1.669, t=0.1s
+
+-- Seed 7/10 --
+  QRC... train_mse=0.196, test_mse=1.812, t=0.1s
+
+-- Seed 8/10 --
+  QRC... train_mse=0.121, test_mse=1.990, t=0.1s
+
+-- Seed 9/10 --
+  QRC... train_mse=0.217, test_mse=1.726, t=0.1s
+
+-- Seed 10/10 --
+  QRC... train_mse=0.165, test_mse=1.563, t=0.1s
+
+============================================================
+
+QRC:
+  Train MSE : 0.172 ± 0.050  (n=10)
+  Test  MSE : 1.779 ± 0.138  (n=10)
+  Time (s)  : 0.1 ± 0.0
+
+Results saved to D:\Projects\Quantum_Chaos_solver\results\seeds_rossler_10seeds.json

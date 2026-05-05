@@ -1,0 +1,47 @@
+
+============================================================
+  Multi-seed benchmark: LORENZ96, 10 seeds
+  QRC:   5q, 2L, window=5
+  QPINN: 4q, 3L, 200 iters
+  Estimated wall time: ~30h (QPINN) + <5min (QRC)
+============================================================
+
+
+-- Seed 1/10 --
+  QRC... train_mse=9.148, test_mse=12.467, t=0.1s
+
+-- Seed 2/10 --
+  QRC... train_mse=9.299, test_mse=12.814, t=0.1s
+
+-- Seed 3/10 --
+  QRC... train_mse=9.209, test_mse=12.400, t=0.1s
+
+-- Seed 4/10 --
+  QRC... train_mse=10.953, test_mse=12.806, t=0.1s
+
+-- Seed 5/10 --
+  QRC... train_mse=7.259, test_mse=12.046, t=0.1s
+
+-- Seed 6/10 --
+  QRC... train_mse=8.266, test_mse=11.584, t=0.1s
+
+-- Seed 7/10 --
+  QRC... train_mse=7.309, test_mse=13.289, t=0.1s
+
+-- Seed 8/10 --
+  QRC... train_mse=9.309, test_mse=11.669, t=0.1s
+
+-- Seed 9/10 --
+  QRC... train_mse=9.356, test_mse=13.441, t=0.1s
+
+-- Seed 10/10 --
+  QRC... train_mse=10.027, test_mse=11.911, t=0.1s
+
+============================================================
+
+QRC:
+  Train MSE : 9.013 ± 1.081  (n=10)
+  Test  MSE : 12.443 ± 0.613  (n=10)
+  Time (s)  : 0.1 ± 0.0
+
+Results saved to D:\Projects\Quantum_Chaos_solver\results\seeds_lorenz96_10seeds.json

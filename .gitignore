@@ -25,6 +25,8 @@ build/
 data/*.npy
 data/*.csv
 data/*.pkl
+data/swe/
+data/qg/
 
 # Exclude experimental runs, keep only final results
 results/*
@@ -37,6 +39,35 @@ results/*
 !results/seeds_*.json
 !results/*_run.log
 !results/qpinn_*.log
+# v2.0.0 SWE+QRC POC artefacts
+!results/swe_qrc/
+!results/swe_qrc/**
+!results/swe_hybrid/
+!results/swe_hybrid/**
+# QG hybrid artefacts
+!results/qg_hybrid/
+!results/qg_hybrid/**
+
+# QG resolution-gap (NeuralGCM-style closure) artefacts
+!results/qg_resgap/
+!results/qg_resgap/**
+
+# L96 K=q matched-complexity scaling artefacts
+!results/l96_kq/
+!results/l96_kq/**
+!results/l96_kq_n11/
+!results/l96_kq_n11/**
+!results/l96_sensitivity/
+!results/l96_sensitivity/**
+
+# Private planning notes (collaborator-identifying content; not for the public repo)
+notes/
+# Exclude oversized intermediate files inside the result trees
+results/swe_qrc/**/*.npz
+results/swe_hybrid/**/*.npz
+results/qg_hybrid/**/*.npz
+results/qg_resgap/**/*.npz
+results/l96_kq/**/*.npz
 
 # Environment
 .env

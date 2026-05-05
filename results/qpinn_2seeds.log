@@ -1,0 +1,87 @@
+
+============================================================
+  Multi-seed benchmark: LORENZ, 2 seeds
+  QRC:   5q, 2L, window=5
+  QPINN: 4q, 3L, 200 iters
+  Estimated wall time: ~6h (QPINN) + <5min (QRC)
+============================================================
+
+
+-- Seed 1/2 --
+  QRC... train_mse=16.608, test_mse=2.844, t=0.1s
+  QPINN... Initialized 45 parameters
+
+================================================================================
+TRAINING LORENZ QUANTUM CIRCUIT
+================================================================================
+Parameters: 45
+Time points: 50
+Learning rate: 0.001
+Iterations: 200
+================================================================================
+
+Iter    0 | Loss:  9602.3351 | L_diff: 6918.5268 | L_bnd: 268.3808 | ||grad||: 44647.7544 | Time:   82.7s
+Iter   50 | Loss:  3596.5657 | L_diff: 1987.0503 | L_bnd: 160.9515 | ||grad||: 18569.6929 | Time: 2865.4s
+Iter  100 | Loss:  2041.6822 | L_diff: 938.1261 | L_bnd: 110.3556 | ||grad||: 8323.0596 | Time: 5230.1s
+Iter  150 | Loss:  1528.2001 | L_diff: 694.1472 | L_bnd:  83.4053 | ||grad||: 5559.6028 | Time: 7577.8s
+
+================================================================================
+TRAINING COMPLETE
+================================================================================
+Final loss: 1246.804092
+Best loss: 1251.253606
+Improvement: 8351.081495
+================================================================================
+
+Results saved to: D:\Projects\Quantum_Chaos_solver\results\qpinn_seed0
+  - final_parameters.npz
+  - training_history.json
+train_mse=109.793, test_mse=76.790, t=9927.9s
+
+-- Seed 2/2 --
+  QRC... train_mse=13.325, test_mse=3.148, t=0.1s
+  QPINN... Initialized 45 parameters
+
+================================================================================
+TRAINING LORENZ QUANTUM CIRCUIT
+================================================================================
+Parameters: 45
+Time points: 50
+Learning rate: 0.001
+Iterations: 200
+================================================================================
+
+Iter    0 | Loss: 14090.2128 | L_diff: 7765.6352 | L_bnd: 632.4578 | ||grad||: 43065.4053 | Time:   47.0s
+Iter   50 | Loss:  7720.1488 | L_diff: 2885.9429 | L_bnd: 483.4206 | ||grad||: 22695.6853 | Time: 2400.8s
+Iter  100 | Loss:  5276.9760 | L_diff: 1352.4655 | L_bnd: 392.4510 | ||grad||: 14597.7977 | Time: 4668.2s
+Iter  150 | Loss:  4260.5397 | L_diff: 789.1514 | L_bnd: 347.1388 | ||grad||: 10884.5558 | Time: 6879.5s
+
+================================================================================
+TRAINING COMPLETE
+================================================================================
+Final loss: 3730.942996
+Best loss: 3738.904220
+Improvement: 10351.308540
+================================================================================
+
+Results saved to: D:\Projects\Quantum_Chaos_solver\results\qpinn_seed1
+  - final_parameters.npz
+  - training_history.json
+train_mse=74.031, test_mse=6.881, t=9076.9s
+
+============================================================
+
+QRC:
+  Train MSE : 14.966 ± 1.642  (n=2)
+  Test  MSE : 2.996 ± 0.152  (n=2)
+  Time (s)  : 0.1 ± 0.0
+
+QPINN:
+  Train MSE : 91.912 ± 17.881  (n=2)
+  Test  MSE : 41.836 ± 34.955  (n=2)
+  Time (s)  : 9502.4 ± 425.5
+
+Wilcoxon signed-rank test (train MSE): p=0.5000
+Mean MSE reduction: 83.7%
+
+Results saved to D:\Projects\Quantum_Chaos_solver\results\seeds_lorenz_2seeds.json
