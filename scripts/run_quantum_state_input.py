@@ -608,6 +608,53 @@ def main():
                   for m in method_results.keys()])
             print(row)
 
+    # ---- NRMSE-vs-horizon plot ----
+    try:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+        fig, ax = plt.subplots(figsize=(9.0, 5.5))
+        method_colors = {
+            "QRC_state_injection":    "#0F4C5C",
+            "Classical_shadows_RFF":  "#B8864A",
+            "Classical_shadows_ESN":  "#9A4836",
+            "Cheating_classical_RFF": "#5E7C6B",
+            "Cheating_classical_ESN": "#1E7B8E",
+        }
+        method_markers = {
+            "QRC_state_injection":    "o",
+            "Classical_shadows_RFF":  "s",
+            "Classical_shadows_ESN":  "^",
+            "Cheating_classical_RFF": "D",
+            "Cheating_classical_ESN": "v",
+        }
+        for method, m in summary["per_method_means"].items():
+            means = [m[f"k{h}_mean"] for h in args.horizons]
+            stds  = [m[f"k{h}_std"]  for h in args.horizons]
+            ax.errorbar(args.horizons, means, yerr=stds,
+                         marker=method_markers.get(method, "o"),
+                         lw=2, ms=9, capsize=4,
+                         label=method.replace("_", " "),
+                         color=method_colors.get(method, "#888"),
+                         markeredgecolor="white", markeredgewidth=0.7)
+        ax.set_xlabel("Prediction horizon k (timesteps)")
+        ax.set_ylabel("Test NRMSE (mean over targets, +/- std over seeds)")
+        title = (f"Paper 6: Hilbert-space input QRC vs classical reservoirs\n"
+                  f"n_input={args.n_input}, q={args.n_qubits}, "
+                  f"reservoir={args.reservoir} tau={args.tau}, "
+                  f"target={args.target_type}, {args.n_seeds} seeds")
+        ax.set_title(title, fontsize=10)
+        ax.axhline(1.0, color="#888", lw=0.7, ls=":",
+                    label="trivial-mean predictor")
+        ax.grid(True, alpha=0.3)
+        ax.legend(loc="best", fontsize=9)
+        fig.tight_layout()
+        out_fig = out_dir / "nrmse_vs_horizon.png"
+        fig.savefig(out_fig, dpi=150)
+        print(f"Saved {out_fig}")
+    except Exception as e:
+        print(f"(plot skipped: {e})")
+
 
 if __name__ == "__main__":
     main()
