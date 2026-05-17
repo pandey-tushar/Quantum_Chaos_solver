@@ -82,3 +82,6 @@ paper/*.toc
 paper/*.bbl
 paper/*.blg
 
+
+# Claude local state
+.claude/
