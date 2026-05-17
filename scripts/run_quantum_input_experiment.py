@@ -102,6 +102,31 @@ def heisenberg_chain_hamiltonian(n: int, J: float = 1.0, disorder: float = 0.5,
     return H
 
 
+def xxz_chain_hamiltonian(n: int, J: float = 1.0, delta: float = 0.5,
+                            disorder: float = 0.5, seed: int = 42) -> np.ndarray:
+    """XXZ: H = J sum (X X + Y Y + delta Z Z) + h_i Z_i.  delta != 1
+    breaks SU(2) symmetry; delta=0 is XY model."""
+    rng = np.random.default_rng(seed)
+    h = rng.uniform(-disorder, disorder, n)
+    H = np.zeros((2 ** n, 2 ** n), dtype=complex)
+    for i in range(n - 1):
+        H += J * two_site("X", i, "X", i + 1, n)
+        H += J * two_site("Y", i, "Y", i + 1, n)
+        H += J * delta * two_site("Z", i, "Z", i + 1, n)
+    for i in range(n):
+        H += h[i] * single_site("Z", i, n)
+    return H
+
+
+def build_target_hamiltonian(system: str, n: int, target_seed: int,
+                              xxz_delta: float = 0.5) -> np.ndarray:
+    if system == "heisenberg":
+        return heisenberg_chain_hamiltonian(n, seed=target_seed)
+    elif system == "xxz":
+        return xxz_chain_hamiltonian(n, delta=xxz_delta, seed=target_seed)
+    raise ValueError(f"Unknown target system: {system}")
+
+
 def evolve_states(H: np.ndarray, psi0: np.ndarray, times: np.ndarray) -> np.ndarray:
     """Return |psi(t)> for each t in `times`.  Returns shape (n_t, dim)."""
     # Diagonalise once, then exp-trick
@@ -353,6 +378,10 @@ def main():
     p.add_argument("--horizons", type=int, nargs="+", default=[1, 5, 20])
     p.add_argument("--n-seeds", type=int, default=5)
     p.add_argument("--train-frac", type=float, default=0.7)
+    p.add_argument("--target-system", choices=["heisenberg", "xxz"],
+                    default="heisenberg")
+    p.add_argument("--target-seed", type=int, default=42)
+    p.add_argument("--xxz-delta", type=float, default=0.5)
     p.add_argument("--out-dir", type=str,
                     default=str(ROOT / "results" / "quantum_input"))
     args = p.parse_args()
@@ -361,8 +390,11 @@ def main():
     out_json = out_dir / "summary.json"
 
     # ---- Generate target trajectory ----
-    print(f"=== Target system: {args.n_target}-qubit disordered Heisenberg ===")
-    H_tgt = heisenberg_chain_hamiltonian(args.n_target, seed=42)
+    print(f"=== Target system: {args.n_target}-qubit disordered {args.target_system.upper()}"
+           f" (target_seed={args.target_seed}"
+           f"{f', delta={args.xxz_delta}' if args.target_system == 'xxz' else ''}) ===")
+    H_tgt = build_target_hamiltonian(args.target_system, args.n_target,
+                                       args.target_seed, xxz_delta=args.xxz_delta)
     # Start in |+>^n (uniform superposition)
     psi0 = np.ones(2 ** args.n_target, dtype=complex) / np.sqrt(2 ** args.n_target)
     times = np.linspace(0, args.t_max, args.n_steps)
