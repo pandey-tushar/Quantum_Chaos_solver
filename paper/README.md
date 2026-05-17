@@ -1,61 +1,52 @@
-# Paper: Quantum Reservoir Computing for Chaotic Dynamics
+# Paper
 
-## Paper Details
+Two manuscript trees in this directory:
 
-**Title:** Quantum Reservoir Computing Outperforms Quantum Physics-Informed Neural Networks for Chaotic Dynamics: A Comparative Study on the Lorenz System
+## 1. Original arXiv version — `main.tex` (this directory)
+
+**Status:** Published as arXiv:2604.23743 (January 2026).
+
+**Title:** *Fixed-Reservoir vs. Variational Quantum Architectures for Chaotic
+Dynamics: Benchmarking QRC and QPINN on the Lorenz System*
 
 **Author:** Tushar Pandey (Texas A&M University)
 
-**Target:** arXiv preprint
+**Framing:** Benchmarking-paper — leads with the QRC-vs-QPINN comparison
+(81% lower MSE, ~52,000× faster training).
 
-**Estimated Length:** 4-5 pages
+**Files:** `main.tex`, `fig1_trajectory.png`, `fig2_circuit.png`,
+`fig2_training.png`, `fig3_ablation.png`, `fig4_comparison.png`.
 
-## Files
+## 2. QST submission version — `qst_submission/` subdirectory
 
-- `main.tex` - Main LaTeX source file (ready for arXiv submission)
+**Status (2026-05-16):** Compiled, anonymized, uploaded to ScholarOne,
+PDF proof viewed. **Pending final "Submit" click in the active browser
+session.**
 
-## Compilation
+**Title:** *Capacity, Not Barren Plateaus: Diagnosing Variational Quantum
+Training Failure on Chaotic Dynamics, and a Fixed-Reservoir Resolution*
 
-### Option 1: Local LaTeX
+**Target venue:** Quantum Science and Technology (IOP), gold open access
+fee waived by the Texas A&M institutional transformative agreement.
+
+**Strategic shift from the arXiv version:** the diagnosis (capacity-limited
+QPINN failure, ruled out by direct gradient-norm measurement against the
+McClean barren-plateau threshold) is moved to the headline; the comparison
+becomes the supporting evidence. New WVQC ablation, per-layer gradient-norm
+figure, and empirical scaling sweep have all been added.
+
+See `qst_submission/PLAN.md` for the complete checklist, submission session
+log, and remaining steps.
+
+## Compilation (both versions)
+
 ```bash
-pdflatex main.tex
-pdflatex main.tex  # Run twice for references
+# Original arXiv version
+cd paper/
+pdflatex main.tex && pdflatex main.tex
+
+# QST anonymized submission version
+cd paper/qst_submission/
+pdflatex main_anon.tex && pdflatex main_anon.tex
+pdflatex cover_letter.tex
 ```
-
-### Option 2: Overleaf
-1. Upload `main.tex` to [Overleaf](https://www.overleaf.com/)
-2. Compile
-
-### Option 3: arXiv
-Upload `main.tex` directly to arXiv - it will compile automatically.
-
-## Abstract
-
-> We present a systematic comparison of two quantum machine learning approaches for representing chaotic dynamical systems: Quantum Physics-Informed Neural Networks (QPINN) and Quantum Reservoir Computing (QRC). Using the Lorenz system as a benchmark, we demonstrate that QRC significantly outperforms QPINN, achieving 40.8% lower mean squared error while training approximately 14,000× faster.
-
-## Key Results
-
-| Method | Train MSE | Test MSE | Training Time |
-|--------|-----------|----------|---------------|
-| QPINN | 37.77 | --- | 3.1 hours |
-| **QRC** | **22.37** | **3.16** | **0.8 sec** |
-
-## Dependencies (for figures)
-
-To regenerate figures from the results:
-```bash
-cd ../
-python scripts/create_comparison_plots.py
-```
-
-## Citation
-
-```bibtex
-@article{pandey2026quantum,
-  title={Quantum Reservoir Computing Outperforms Quantum Physics-Informed Neural Networks for Chaotic Dynamics},
-  author={Pandey, Tushar},
-  journal={arXiv preprint},
-  year={2026}
-}
-```
-
