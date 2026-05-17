@@ -253,6 +253,14 @@ def main():
                           "notoriously easier to predict than direction.")
     ap.add_argument("--out-dir", type=str,
                      default=str(ROOT / "results" / "paper4_synthetic"))
+    ap.add_argument("--noise-std", type=float, default=0.01,
+                     help="Gaussian noise std added to classical features in "
+                          "the *_noisy baselines.  Default 0.01 matches the "
+                          "per-feature QRC shot noise at M=q*1024 shots "
+                          "(approximate, ~ 1/sqrt(M) ~ 0.009 at q=11).")
+    ap.add_argument("--ridge-alpha-strong", type=float, default=100.0,
+                     help="Strong ridge regularization for the "
+                          "Classical_*_strongreg baselines (default 100x).")
     args = ap.parse_args()
 
     assert args.n_assets <= args.n_qubits
@@ -295,6 +303,12 @@ def main():
         "Classical_RFF_direct": [],
         "Classical_ESN_direct": [],
         "Classical_linear_direct": [],
+        # Mechanism isolation: is QRC's long-horizon edge from a different
+        # feature subspace, or just from shot-noise regularization?
+        "Classical_RFF_noisy": [],          # RFF + iid Gaussian noise matched to QRC
+        "Classical_ESN_noisy": [],          # ESN + same noise
+        "Classical_RFF_strongreg": [],      # RFF with 100x ridge alpha
+        "Classical_ESN_strongreg": [],      # ESN with 100x ridge alpha
     }
     feat_dims = {}
     for seed in range(args.n_seeds):
@@ -354,6 +368,48 @@ def main():
                 + "  ".join([f"k{h}={r[f'k{h}_mean_nrmse']:.3f}"
                               for h in args.horizons]))
         method_results["Classical_linear_direct"].append(r)
+
+        # === Mechanism isolation baselines ===
+        rng_noise = np.random.default_rng(3000 + seed)
+        # 1. RFF + matched Gaussian noise (tests: is QRC's edge just shot-noise reg?)
+        t0 = time.time()
+        rff_noisy = rff_feats + rng_noise.standard_normal(rff_feats.shape) * args.noise_std
+        r = eval_multitarget_per_horizon(rff_noisy, y_aligned, args.horizons,
+                                            args.train_frac)
+        print(f"  RFF+noise   ({time.time()-t0:.1f}s, sigma={args.noise_std}): "
+                + "  ".join([f"k{h}={r[f'k{h}_mean_nrmse']:.3f}"
+                              for h in args.horizons]))
+        method_results["Classical_RFF_noisy"].append(r)
+
+        # 2. ESN + matched Gaussian noise on features
+        t0 = time.time()
+        esn_noisy = Fw_esn + rng_noise.standard_normal(Fw_esn.shape) * args.noise_std
+        r = eval_multitarget_per_horizon(esn_noisy, y_aligned, args.horizons,
+                                            args.train_frac)
+        print(f"  ESN+noise   ({time.time()-t0:.1f}s, sigma={args.noise_std}): "
+                + "  ".join([f"k{h}={r[f'k{h}_mean_nrmse']:.3f}"
+                              for h in args.horizons]))
+        method_results["Classical_ESN_noisy"].append(r)
+
+        # 3. RFF + strong ridge regularization (tests: is QRC's edge just reg?)
+        t0 = time.time()
+        r = eval_multitarget_per_horizon(rff_feats, y_aligned, args.horizons,
+                                            args.train_frac,
+                                            alpha=args.ridge_alpha_strong)
+        print(f"  RFF strongreg ({time.time()-t0:.1f}s, alpha={args.ridge_alpha_strong}): "
+                + "  ".join([f"k{h}={r[f'k{h}_mean_nrmse']:.3f}"
+                              for h in args.horizons]))
+        method_results["Classical_RFF_strongreg"].append(r)
+
+        # 4. ESN + strong ridge regularization
+        t0 = time.time()
+        r = eval_multitarget_per_horizon(Fw_esn, y_aligned, args.horizons,
+                                            args.train_frac,
+                                            alpha=args.ridge_alpha_strong)
+        print(f"  ESN strongreg ({time.time()-t0:.1f}s, alpha={args.ridge_alpha_strong}): "
+                + "  ".join([f"k{h}={r[f'k{h}_mean_nrmse']:.3f}"
+                              for h in args.horizons]))
+        method_results["Classical_ESN_strongreg"].append(r)
 
     # ---- Summary ----
     summary = {"args": vars(args), "feature_dims": feat_dims,
