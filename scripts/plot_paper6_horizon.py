@@ -73,8 +73,10 @@ def main():
     ax.set_xlabel("Prediction horizon k (timesteps)")
     ax.set_ylabel("Test NRMSE (mean over targets, +/- std over seeds)")
     ax_args = s["args"]
-    title = (f"Paper 6: Hilbert-space input QRC vs classical reservoirs\n"
-              f"n_input={ax_args['n_input']}, q={ax_args['n_qubits']}, "
+    n_input = ax_args.get("n_input", ax_args.get("n_assets", "?"))
+    label = "n_input" if "n_input" in ax_args else "n_assets"
+    title = (f"QRC vs classical baselines (NRMSE vs horizon)\n"
+              f"{label}={n_input}, q={ax_args['n_qubits']}, "
               f"reservoir={ax_args.get('reservoir','tfim')} "
               f"tau={ax_args.get('tau',1.0)}, "
               f"target={ax_args.get('target_type','pauli')}, "
