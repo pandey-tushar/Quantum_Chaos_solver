@@ -82,3 +82,8 @@ paper/*.toc
 paper/*.bbl
 paper/*.blg
 
+
+# LaTeX build files in qst_submission
+paper/qst_submission/*.aux
+paper/qst_submission/*.log
+paper/qst_submission/*.out

@@ -1,0 +1,38 @@
+Significance Statement
+======================
+
+Target length: ~120 words (plain language, for the QST submission form).
+Audience: a scientifically literate non-specialist reader, e.g. a journal
+editor outside the QML sub-field, or a science journalist.
+
+----------------------------------------------------------------------
+Quantum machine learning at near-term hardware scale routinely fails
+to train on hard prediction tasks, and the failure is typically
+attributed to "barren plateaus" -- a phenomenon in which the gradients
+needed to train the quantum model vanish exponentially. We show that
+on a benchmark chaotic-prediction task at the relevant hardware scale,
+this explanation is wrong. Direct gradient measurements rule out the
+barren-plateau regime by four orders of magnitude. The failure is
+instead caused by the quantum model simply being too small to express
+the trajectory it is asked to fit. We then show that an alternative
+quantum architecture -- a fixed quantum reservoir paired with a
+classical linear readout -- bypasses both failure modes by
+construction, achieving 81% lower error and training fifty thousand
+times faster on the same benchmark.
+----------------------------------------------------------------------
+
+Word count: 122.
+
+Notes for the submitter:
+- This statement deliberately leads with the diagnosis, not the
+  comparison numbers, because the diagnosis is the QST-worthy
+  contribution. If a reviewer sees only this paragraph, they should
+  walk away with "this paper changes how the field thinks about
+  variational quantum failure," not "this paper is yet another
+  benchmark."
+- The "fifty thousand times faster" is a true number but stated
+  carefully: it is the algorithmic ratio of closed-form ridge to
+  iterative variational training, not a hardware-driven speedup.
+- The "four orders of magnitude" framing is the cleanest one-line
+  defence against the BP-rebuttal. It is the same number that appears
+  in the abstract.

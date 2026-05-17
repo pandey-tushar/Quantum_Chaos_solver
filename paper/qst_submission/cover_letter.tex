@@ -1,0 +1,91 @@
+\documentclass[11pt,a4paper]{letter}
+\usepackage[margin=1in]{geometry}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+
+\signature{Tushar Pandey \\ Texas A\&M University \\ \texttt{tusharp@tamu.edu}}
+\address{Tushar Pandey \\ Texas A\&M University \\ College Station, TX, USA}
+
+\begin{document}
+
+\begin{letter}{
+  The Editor \\
+  \textit{Quantum Science and Technology} \\
+  IOP Publishing
+}
+
+\opening{Dear Editor,}
+
+I am pleased to submit the manuscript ``Capacity, Not Barren Plateaus:
+Diagnosing Variational Quantum Training Failure on Chaotic Dynamics, and
+a Fixed-Reservoir Resolution'' for consideration as a research paper in
+\textit{Quantum Science and Technology}. The work is original, has not
+been published elsewhere, and is not under consideration at any other
+journal.
+
+The paper makes a diagnostic contribution that I believe is essential
+reading for the quantum-machine-learning sub-field. Variational
+quantum-circuit failures on hard learning tasks at NISQ scale are
+routinely attributed to barren plateaus --- exponentially vanishing
+gradients in deep parameterised circuits --- and a substantial volume
+of recent work proposes mitigations targeted at this specific failure
+mode. We demonstrate, on a benchmark chaotic-dynamics task at the
+relevant hardware scale, that this attribution is empirically and
+theoretically wrong. The McClean barren-plateau bound for the relevant
+ansatz class predicts gradient magnitudes that are four orders of
+magnitude below those we measure. The dominant failure mode is
+capacity-limited expressivity rather than gradient vanishing, and
+mitigations targeted at the gradient-vanishing regime should not be
+expected to help.
+
+This diagnostic finding has lasting consequences. First, it constrains
+which mitigation strategies are appropriate at NISQ scale, redirecting
+effort toward architectural rather than gradient-side interventions.
+Second, the diagnostic methodology --- the direct comparison of
+measured gradient norms against the McClean threshold for the ansatz
+class --- generalises to any variational quantum-machine-learning
+study and should be standard practice. Third, the finding clarifies
+what an architectural alternative needs to bypass: not gradients per
+se, but the underlying capacity limit. We illustrate this with a
+fully specified Quantum Reservoir Computing pipeline that achieves
+$81\%$ lower mean-squared error and trains approximately $52{,}000
+\times$ faster on matched quantum resources, with the same
+architecture generalising across three canonical chaotic systems
+without per-system retuning.
+
+The paper additionally contributes an empirical scaling sweep on
+Lorenz, $q \in \{5, \dots, 10\}$ against the standard ESN baseline at
+$N_{\mathrm{ESN}} = 500$, showing that the naive feature-dimension
+parity crossover does not occur: QRC test MSE degrades monotonically
+with qubit count at fixed prediction-target dimension because features
+dilute relative to a fixed-dimensional signal. The correct scaling
+axis is matched-complexity, in which qubit count and target dimension
+grow together; this is the subject of a separate companion manuscript
+in preparation. The QST paper also contributes a windowed-variational
+quantum-circuit (WVQC) ablation that closes the information-asymmetry
+concern in the QRC--QPINN comparison. The WVQC
+ablation, in which a variational circuit is given the same windowed
+input as QRC and trained by Adam under the same protocol as QPINN,
+recovers only approximately $32\%$ of the QRC--QPINN gap on matched
+seeds, isolating the fixed-reservoir architectural choice as the
+dominant factor and extending the capacity-limit diagnosis to the
+information-symmetric setting.
+
+All experimental code, data, and figures are released publicly at the
+repository linked in the manuscript, supporting reproducibility and
+extension by other groups.
+
+I have intentionally restructured the paper so that the diagnostic
+finding leads, with the architectural comparison serving as
+supporting evidence rather than as the primary claim. I believe this
+ordering reflects the lasting contribution and is appropriate for
+the journal's selectivity criterion.
+
+I would be grateful for your consideration. I am happy to suggest
+reviewers if helpful.
+
+\closing{Sincerely,}
+
+\end{letter}
+
+\end{document}

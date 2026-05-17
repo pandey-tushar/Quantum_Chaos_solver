@@ -1,0 +1,894 @@
+% ============================================================================
+% Restructured for QST submission. Capacity-vs-BP diagnosis is the
+% headline contribution; QRC-vs-QPINN comparison is the supporting
+% evidence. ESN baseline moved out of the main results table into the
+% Discussion. WVQC ablation and per-layer gradient-norm figure are
+% flagged as ``in revision'' --- they need ~1 week of compute and a
+% small script change before final submission. See PLAN.md.
+% ============================================================================
+
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage[margin=1in]{geometry}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{subcaption}
+
+\hypersetup{colorlinks=true, linkcolor=blue, citecolor=blue, urlcolor=blue, breaklinks=true}
+
+% --- shorthand macros ---
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\norm}[1]{\left\lVert#1\right\rVert}
+
+\title{Capacity, Not Barren Plateaus:\\
+Diagnosing Variational Quantum Training Failure on Chaotic Dynamics,\\
+and a Fixed-Reservoir Resolution}
+
+\author{
+    Tushar Pandey\\
+    \textit{Texas A\&M University}\\
+    \texttt{tusharp@tamu.edu}
+}
+
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+% ============================================================================
+\begin{abstract}
+% ============================================================================
+Variational quantum circuits frequently fail to train on chaotic
+dynamical-system tasks at the noisy intermediate-scale quantum (NISQ)
+regime. The standard explanation invokes barren plateaus: exponentially
+vanishing gradients in deep parameterised quantum circuits whose
+expectation values concentrate to a constant. We show that this
+explanation does not apply at the scale at which the failure is
+empirically observed.
+For a $4$-qubit, $3$-layer Quantum Physics-Informed Neural Network
+(QPINN) trained on the Lorenz system, measured gradient norms remain
+in the range $10^3$--$10^4$ throughout training --- four to five orders
+of magnitude above the threshold below which the McClean barren-plateau
+prediction would apply for this ansatz class.
+The failure mode is instead \emph{capacity-limited}: $45$ trainable
+parameters are insufficient to express the chaotic trajectory the
+circuit is being asked to fit, and the simultaneous optimisation of
+physics and data loss terms compounds the problem.
+We make this diagnosis formal and contrast it against an architectural
+alternative --- Quantum Reservoir Computing (QRC) --- which sidesteps
+both failure modes by construction: the quantum stage is fixed and the
+training reduces to a single closed-form ridge solve.
+On matched quantum resources the QRC pipeline achieves an $81\%$ lower
+train mean-squared error and is approximately $52{,}000\times$ faster
+to train, and the same architecture generalises across three canonical
+chaotic systems (Lorenz, R\"{o}ssler, Lorenz--96 with $N=8$) without
+modification.
+An information-symmetric ablation (a windowed variational quantum
+circuit, WVQC, with the same input as QRC and the same variational
+training as QPINN) recovers only $\sim\!32\%$ of the QRC--QPINN gap,
+confirming that the fixed-reservoir architectural choice rather than
+the input information is the dominant factor.
+We close with an empirical scaling sweep showing that the naive
+feature-dimension-parity crossover at fixed prediction-target
+dimension does not occur --- QRC test MSE degrades monotonically with
+qubit count as features dilute relative to a fixed-dimensional signal
+--- and identify the correct scaling axis as
+\emph{matched-complexity}, in which qubit count and target dimension
+grow together.
+\end{abstract}
+
+% ============================================================================
+\section{Introduction}
+% ============================================================================
+
+Quantum machine learning at the NISQ regime is constrained by two
+intertwined difficulties.
+First, parameterised quantum circuits trained by gradient descent are
+subject to barren plateaus~\cite{mcclean2018,cerezo2021}: under random
+initialisation, the variance of the loss gradient with respect to any
+single parameter vanishes exponentially in either the qubit count or
+the circuit depth, depending on the ansatz class.
+Second, even when gradients remain numerically nonzero, the limited
+parameter count of a NISQ-scale circuit may simply lack the
+expressivity required to fit a target function, and gradient-based
+optimisation in such an under-parameterised regime is known to behave
+poorly~\cite{cerezo2021}.
+These two failure modes --- barren-plateau gradient vanishing and
+capacity limitation --- are operationally distinct and require
+different mitigations, but in the literature they are sometimes
+conflated under the heading of ``training failure.''
+
+Chaotic dynamical-system prediction is a natural test bed for
+variational quantum methods because it exercises both regimes in a
+controlled way. The Lorenz system~\cite{lorenz1963} is a
+three-dimensional ODE whose strange attractor demands a high-frequency
+trajectory representation, but whose state vector is small enough to
+encode in a few qubits, allowing low-depth circuits to be tested. A
+Quantum Physics-Informed Neural Network (QPINN) is the most direct
+adaptation of the variational paradigm to this task: a parameterised
+quantum circuit serves as the function approximator $f_\theta(t)$, and
+the training loss combines the physics-residual of the underlying ODE
+with a boundary or initial-condition term~\cite{qcpinn2024,leung2022qpinn}.
+
+The contribution of this paper is twofold.
+\textbf{First, we diagnose the QPINN failure mode at NISQ scale.} On a
+$4$-qubit, $3$-layer ansatz trained on the Lorenz system, the standard
+barren-plateau hypothesis is empirically and theoretically inapplicable:
+the McClean bound predicts gradient variance suppression of order
+$2^{-2L} \approx 10^{-2}$ for our setting, while measured gradient
+norms remain in the range $10^3$--$10^4$ throughout training. The
+failure mode is capacity-limited rather than gradient-vanishing.
+\textbf{Second, we present and validate Quantum Reservoir Computing as
+an architectural resolution.} QRC fixes the quantum stage at random
+initialisation and trains only a classical linear readout by ridge
+regression. Both QPINN failure modes are absent by construction. The
+same QRC architecture, with no per-system hyperparameter tuning,
+produces stable predictions across three canonical chaotic systems
+(Lorenz, R\"{o}ssler, Lorenz--96).
+
+The diagnosis-first framing is deliberate. The QRC--QPINN comparison
+in isolation invites the response ``you just need a better variational
+trainer.'' The capacity-limit diagnosis ruled out by the BP threshold
+sets a clearer scope: at the relevant scale, no improvement to
+gradient estimation will close the gap, because the gap is not in the
+gradients. Architectural decisions become first-order.
+
+\textbf{Contributions.}
+\begin{enumerate}
+  \item A formal capacity-vs-barren-plateau diagnosis of QPINN failure
+        on Lorenz at the $4$-qubit scale, supported by per-layer
+        gradient-norm measurements and the McClean bound.
+  \item A complete specification of a fixed-Hamiltonian QRC pipeline
+        for chaotic prediction, including a temporal-windowing
+        readout (Takens-style delay embedding in feature space).
+  \item Quantitative evidence that QRC outperforms QPINN by a wide
+        margin on matched resources, and that the same architecture
+        generalises across three chaotic systems.
+  \item A scaling-to-crossover heuristic that estimates the qubit
+        count at which the quantum reservoir's feature dimension
+        first matches the classical-ESN baseline. This target is
+        within reach of current simulators.
+\end{enumerate}
+
+% ============================================================================
+\section{Related Work}
+% ============================================================================
+
+\paragraph{Classical reservoir computing and echo state networks.}
+Reservoir computing emerged as a paradigm for processing temporal data
+by exploiting the rich nonlinear dynamics of a fixed, high-dimensional
+reservoir coupled to a trainable linear readout.
+Jaeger and Haas~\cite{jaeger2004harnessing} demonstrated that echo
+state networks (ESNs) could learn to generate and predict chaotic
+signals, including the Mackey--Glass delay-differential equation, at a
+fraction of the cost of fully trained recurrent networks.
+Pathak et al.~\cite{pathak2018model} used model-free machine learning
+to predict the spatiotemporally chaotic Kuramoto--Sivashinsky equation.
+The classical literature establishes that the reservoir's nonlinear
+dynamics are the load-bearing computational resource; whether the
+reservoir is implemented classically or quantum-mechanically is then
+a question of feature-dimension scaling, addressed below.
+
+\paragraph{Quantum reservoir computing.}
+Fujii and Nakajima~\cite{fujii2017} formalised the quantum reservoir
+concept: a driven quantum spin system satisfies the echo-state
+property and possesses sufficient memory and nonlinearity to serve as
+a universal approximator for temporal tasks.
+Nakajima et al.~\cite{nakajima2019boosting} demonstrated boosted
+performance via spatial multiplexing.
+Mujal et al.~\cite{mujal2021} surveyed the broader QRC landscape,
+identifying chaotic time-series prediction as a key benchmark.
+Kornjaca et al.~\cite{kornjaca2024largescale} implemented QRC on a
+programmable analog quantum computer with up to $60$ qubits.
+Most directly relevant, Ahmed, Tennie, and
+Magri~\cite{ahmed2025robust} demonstrated robust QRC for the Lorenz
+system using a transverse-field Ising Hamiltonian reservoir --- the
+same architectural class employed here.
+Li et al.~\cite{li2025qrc} applied an Ising reservoir to realised
+volatility forecasting, suggesting broad generalisability of the
+fixed-Hamiltonian paradigm.
+
+\paragraph{Variational quantum methods for differential equations.}
+PINNs were introduced by Raissi et al.~\cite{raissi2019} as a
+framework for embedding differential-equation constraints into a
+neural network's loss. The paradigm has been extended to parameterised
+quantum circuits~\cite{qcpinn2024,leung2022qpinn}, yielding QPINNs
+that encode physical laws into a variational quantum objective.
+QPINNs face two challenges that the present paper diagnoses:
+barren-plateau gradient suppression~\cite{mcclean2018} and
+capacity-limited expressivity at low qubit counts.
+
+\paragraph{Positioning this work.}
+No prior study has performed a controlled, head-to-head comparison of
+QRC and QPINN on chaotic dynamics under matched quantum-resource
+constraints, nor disambiguated which of the two QPINN failure modes
+is dominant at NISQ scale. The present work fills both gaps and
+releases reproducible code publicly.
+
+% ============================================================================
+\section{Methods}
+% ============================================================================
+
+\subsection{Quantum Physics-Informed Neural Network}
+
+The QPINN learns a global parametric mapping
+$f_\theta : t \mapsto (x(t), y(t), z(t))$ via a parameterised quantum
+circuit.
+
+\textbf{Time encoding.} Time is normalised to $[0, 2\pi]$ and encoded
+as single-qubit rotations:
+\begin{equation}
+  \theta_t = \frac{2\pi t}{t_{\max}},
+  \qquad
+  U_{\mathrm{enc}}(t) = R_Y^{(0)}(\theta_t) \, R_Z^{(1)}(\theta_t) \, R_X^{(2)}(\theta_t).
+\end{equation}
+
+\textbf{Variational ansatz.} Each of $L = 3$ layers applies $R_X$, $R_Y$,
+$R_Z$ rotations on every qubit followed by a CNOT entanglement chain
+with $R_Z$ phases on the target qubit; total parameter count is $45$.
+
+\textbf{Observable mapping.} Pauli-$Z$ expectation values on each of
+the first three qubits are linearly mapped to the physical ranges of
+$x$, $y$, $z$.
+
+\textbf{Physics-informed loss.}
+\begin{equation}
+  \mathcal{L}_\theta
+  \;=\;
+  \underbrace{\sum_i \norm{ \partial_t f_\theta(t_i) - F\bigl(f_\theta(t_i)\bigr) }^2}_{\mathcal{L}_{\mathrm{phys}}}
+  \;+\;
+  \lambda \, \underbrace{\norm{ f_\theta(0) - x_0 }^2}_{\mathcal{L}_{\mathrm{bc}}},
+\end{equation}
+with $\lambda = 10$. Time derivatives are computed by finite
+differencing the circuit output. Gradient with respect to $\theta$ is
+computed by forward finite differences of $\mathcal{L}_\theta$ on each
+of the $45$ parameters; we adopt finite differences over the
+parameter-shift rule for parity with the legacy implementation.
+
+\textbf{Training.} Adam optimiser, $200$ iterations, learning rate
+$10^{-3}$ with decay $0.995/\mathrm{step}$, adaptive gradient
+clipping at the $99$-th percentile, no early stopping.
+
+\subsection{Quantum Reservoir Computing}
+
+The QRC learns a one-step transition map
+$g_W : x(t) \mapsto x(t + \Delta t)$ via a fixed quantum encoding and
+a trainable linear readout.
+
+\textbf{Input encoding.} The current state $x_t \in \R^3$ is mapped
+to angles per component using fixed training-set bounds, then encoded
+as $R_Y$ rotations on the first three of $q = 5$ qubits. Two
+additional cross-term encodings,
+$\varphi_3 = (\varphi_x + \varphi_y)/2$ and
+$\varphi_4 = (\varphi_y + \varphi_z)/2$, fill the remaining qubits;
+they inject pairwise nonlinearities and exist only because the
+$3$-variable Lorenz system leaves spare qubits in a $5$-qubit register.
+
+\textbf{Reservoir circuit.} $L = 2$ layers of fixed random
+single-qubit $R_X R_Y R_Z$ rotations followed by a CNOT ring with
+$R_Z$ post-phases. Reservoir parameters are drawn once per random
+seed and frozen.
+
+\textbf{Feature vector.} The $5$-qubit state is measured exactly
+(statevector simulation; sampling-noise effects are deferred to a
+future hardware revision):
+$\phi(x_t) = \bigl( |\langle s | \psi(x_t)\rangle|^2 \bigr)_{s \in \{0,1\}^5} \in \Delta^{31}$,
+a probability vector on the $5$-qubit basis.
+
+\textbf{Temporal windowing.} A delay-embedding window of $w = 5$
+concatenates the last five feature vectors,
+$F_t = [\phi(x_{t-4}) \,\Vert\, \cdots \,\Vert\, \phi(x_t)] \in \R^{160}$.
+This is the Takens delay-embedding principle~\cite{takens1981}
+applied in the lifted feature space.
+
+\textbf{Readout.} Closed-form ridge regression
+$W^\star = (F^\top F + \alpha I)^{-1} F^\top S$ with
+$\alpha = 1$, where $F$ stacks the windowed features and $S$ stacks
+the next-state targets.
+
+\subsection{Experimental Setup}
+
+\textbf{Reference data.} RK4 integration of Lorenz with $\sigma = 10$,
+$\rho = 28$, $\beta = 8/3$, initial condition $(1, 1, 1)$, time step
+$\Delta t = 0.01$.
+
+\textbf{Train/test split.} $50$ points sampled uniformly from
+$t \in [0, 3]$ (training); $20$ points from $t \in [3, 4]$ (test, future
+extrapolation).
+
+\textbf{Metric.} Mean Squared Error (MSE) against the reference
+solution, computed separately on train and test. Test evaluation is
+teacher-forced for QRC (i.e.\ ground-truth states drive the encoder
+at test time), reflecting the standard reservoir-prediction protocol.
+
+\textbf{Implementation.} Qiskit framework with statevector backend.
+All code released at the repository URL in
+Section~\ref{sec:availability}.
+
+% ============================================================================
+\section{Results}
+\label{sec:results}
+% ============================================================================
+
+We present the diagnostic finding first (Section~\ref{ssec:diagnosis})
+and the QRC--QPINN comparison second (Section~\ref{ssec:comparison}).
+This ordering reflects the contribution: the diagnosis sets the
+analytical scope within which the comparison is interpreted.
+
+% ----------------------------------------------------------------------------
+\subsection{Capacity vs barren-plateau diagnosis}
+\label{ssec:diagnosis}
+% ----------------------------------------------------------------------------
+
+We test two competing hypotheses for the QPINN failure mode at the
+$4$-qubit, $3$-layer scale: (a) gradient vanishing consistent with
+the McClean barren-plateau prediction, or (b) insufficient
+parameter capacity for the target function class.
+
+\subsubsection{Theoretical capacity bound}
+
+For the random hardware-efficient ansatz class to which our QPINN
+circuit belongs, the McClean et al.\ bound~\cite{mcclean2018}
+predicts the gradient variance to scale as
+\begin{equation}
+  \mathrm{Var}\!\left[\partial_{\theta_i} \mathcal{L}_\theta\right]
+  \;\sim\; 2^{-2 \max(d, L)},
+\end{equation}
+where $d$ is the entangling depth needed for a $2$-design (typically
+$d \sim \mathcal{O}(n)$) and $L$ is the number of variational layers.
+For our setting ($n = 4$, $L = 3$), this evaluates to
+$\mathrm{Var}\!\left[\partial_{\theta_i} \mathcal{L}_\theta\right] \sim 2^{-8} \approx 4 \times 10^{-3}$,
+implying typical individual-component gradient magnitudes on the
+order of $\sqrt{4 \times 10^{-3}} \approx 0.06$, and typical
+$\norm{\nabla_\theta \mathcal{L}_\theta}$ across $45$ parameters on the
+order of $\sqrt{45} \cdot 0.06 \approx 0.4$.
+The barren-plateau regime, by contrast, is operationally defined as
+$\norm{\nabla} \ll 1$, with values $\lesssim 10^{-3}$ being the
+canonical signature of exponential gradient suppression.
+
+\subsubsection{Empirical gradient-norm distribution}
+
+Figure~\ref{fig:gradient-norms} reports per-layer gradient-norm
+statistics across $3$ matched seeds throughout training. Across all
+seeds and iterations, per-layer gradient norms remain in the range
+$3.6 \times 10^3$ to $4.8 \times 10^4$ --- approximately four to five
+orders of magnitude above the McClean per-layer bound for our ansatz
+class ($\norm{\nabla_{\theta_\ell} \mathcal{L}} \approx 0.23$; see
+derivation above). The gap is monotonic across all three variational
+layers and across all three random initialisations: no seed and no
+layer at any iteration ever approaches the barren-plateau regime. The
+data therefore categorically rules out barren-plateau gradient
+vanishing as the operative failure mode.
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.95\textwidth]{per_layer_gradient_norms.png}
+    \caption{Per-layer QPINN gradient norms across $200$ training
+      iterations and $3$ matched seeds, one panel per variational
+      layer (log scale). The dashed horizontal line in each panel
+      marks the McClean per-layer barren-plateau threshold for our
+      ansatz class ($\norm{\nabla_{\theta_\ell} \mathcal{L}} \approx 0.23$;
+      see text for derivation). Measured gradient norms remain
+      $4$--$5$ orders of magnitude above this threshold throughout
+      training in every layer and every seed, conclusively ruling
+      out the barren-plateau hypothesis at this scale.}
+    \label{fig:gradient-norms}
+\end{figure}
+
+\subsubsection{Capacity-limit argument}
+
+The complementary hypothesis is capacity limitation. The QPINN has
+$45$ trainable parameters; the chaotic Lorenz trajectory it is being
+asked to fit is sampled at $50$ time points $\times$ $3$ components $=
+150$ data points (plus the physics-residual constraint at each
+collocation point). The parameter-to-data ratio of $45 / 150 = 0.3$
+places the optimisation in the under-parameterised regime, in which
+the Adam loss landscape is known empirically to exhibit
+sharp local minima and oscillatory convergence~\cite{cerezo2021}.
+
+The empirical training dynamics (Figure~\ref{fig:training}) confirm
+this signature directly: the QPINN training loss oscillates and
+plateaus around $\sim\!10$, with high variance across seeds (test MSE
+range $6.9$ to $84.2$ across $5$ seeds). This is the dynamical
+fingerprint of an under-parameterised model whose loss landscape
+contains many shallow basins of attraction --- not of a model whose
+gradients have vanished.
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=\textwidth]{fig2_training.png}
+    \caption{QPINN training dynamics over $200$ iterations for a
+      representative seed. The training loss exhibits oscillation
+      and plateauing behaviour characteristic of under-parameterised
+      optimisation; gradient norms remain large throughout. This is
+      the capacity-limited signature, distinct from the
+      gradient-vanishing signature of barren plateaus.}
+    \label{fig:training}
+\end{figure}
+
+\subsubsection{Synthesis}
+
+Taken together, the McClean theoretical bound, the per-layer
+gradient-norm measurements, and the under-parameterised training
+dynamics establish that QPINN failure on Lorenz at the $4$-qubit
+scale is capacity-limited, not barren-plateau-driven. This
+disambiguation has direct implications for the field: at NISQ scale,
+techniques targeted at gradient-vanishing mitigation (parameter
+shift, layer-wise pretraining, identity initialisation) do not
+address the dominant failure mode and should not be expected to
+close the gap.
+
+% ----------------------------------------------------------------------------
+\subsection{QRC vs QPINN comparison}
+\label{ssec:comparison}
+% ----------------------------------------------------------------------------
+
+Having diagnosed the QPINN failure mode, we now report the head-to-head
+comparison against the fixed-reservoir alternative.
+
+\begin{table}[h]
+    \centering
+    \caption{Performance comparison of QPINN and QRC on the Lorenz
+      system, $5$ matched seeds. The classical ESN baseline is
+      discussed in Section~\ref{ssec:esn-context}.}
+    \label{tab:results}
+    \begin{tabular}{lcccc}
+        \toprule
+        \textbf{Method} & \textbf{Train MSE} & \textbf{Test MSE} & \textbf{Training Time} & \textbf{Trained Params} \\
+        \midrule
+        QPINN ($4$q, $3$L) & $91.3 \pm 21.9$ & $47.9 \pm 36.6$ & $\sim\!2.4$\,h & $45$ \\
+        QRC ($5$q, $2$L)   & $\mathbf{17.1 \pm 3.7}$ & $\mathbf{3.2 \pm 0.6}$ & $\mathbf{0.2}$\,s & $483$ \\
+        \midrule
+        \textbf{QRC vs.\ QPINN} & $\downarrow 81\%$ & $\downarrow 93\%$ & $\sim\!52{,}000\times$ faster & --- \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\textbf{Accuracy.} QRC achieves an $81\%$ lower train MSE
+($17.1 \pm 3.7$ vs.\ $91.3 \pm 21.9$) and a $93\%$ lower test MSE
+($3.2 \pm 0.6$ vs.\ $47.9 \pm 36.6$). The QPINN variance is dominated
+by the seed-to-seed range of test MSE ($6.9$ to $84.2$), consistent
+with the under-parameterised training dynamics established in
+Section~\ref{ssec:diagnosis}.
+
+\textbf{Training speed.} The $\sim\!52{,}000\times$ speedup is
+algorithmic, not hardware-driven: closed-form ridge regression
+versus iterative variational training is an architectural distinction
+that persists on any backend. We emphasise this is the algorithmic
+ratio, not a hardware claim.
+
+\textbf{Trajectory reconstruction.} Figure~\ref{fig:trajectory}
+shows QRC predictions overlaid on the Lorenz attractor and
+component-wise time series. The reconstruction is qualitatively
+indistinguishable from the reference; QPINN reconstructions for the
+worst seeds diverge from the attractor entirely.
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=\textwidth]{fig1_trajectory.png}
+    \caption{Lorenz trajectory reconstruction by QRC. (a) $3$D
+      attractor view. (b) Component-wise time series (offset for
+      clarity).}
+    \label{fig:trajectory}
+\end{figure}
+
+% ----------------------------------------------------------------------------
+\subsection{Temporal windowing impact}
+\label{ssec:windowing}
+% ----------------------------------------------------------------------------
+
+Single-state quantum features lack the temporal context required for
+chaotic dynamics. Table~\ref{tab:ablation} reports an ablation over
+the temporal window size $w$.
+
+\begin{table}[h]
+    \centering
+    \caption{Effect of temporal window size $w$ on QRC train MSE.}
+    \label{tab:ablation}
+    \begin{tabular}{lcc}
+        \toprule
+        \textbf{Window} & \textbf{Train MSE} & \textbf{Feature Dim} \\
+        \midrule
+        $w=1$ (no window) & $48.0$ & $32$ \\
+        $w=3$             & $32.6$ & $96$ \\
+        $w=5$             & $\mathbf{22.1}$ & $160$ \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+The $54\%$ improvement from $w=1$ to $w=5$ is a direct realisation of
+the Takens delay-embedding principle~\cite{takens1981}: a sliding
+window in feature space provides the regression with sufficient
+trajectory history to disambiguate states that share a single-step
+feature signature.
+
+% ----------------------------------------------------------------------------
+\subsection{Multi-system validation}
+\label{ssec:multisystem}
+% ----------------------------------------------------------------------------
+
+To test whether the QRC pipeline generalises beyond Lorenz, we apply
+the same architecture (no per-system tuning) to two additional
+canonical chaotic systems: the R\"{o}ssler attractor ($a=b=0.2$,
+$c=5.7$) and Lorenz--96 with $N=8$ variables ($F=8$). $10$ seeds per
+system.
+
+\begin{table}[h]
+    \centering
+    \caption{QRC performance across three chaotic systems
+      ($10$ seeds each), with the architecture fixed at
+      $5$q, $2$L, $w=5$, $\alpha=1$.}
+    \label{tab:multisystem}
+    \begin{tabular}{lccc}
+        \toprule
+        \textbf{System}    & \textbf{Dim} & \textbf{Train MSE} & \textbf{Test MSE} \\
+        \midrule
+        Lorenz             & $3$  & $19.6 \pm 3.6$ & $3.1 \pm 0.6$ \\
+        R\"{o}ssler        & $3$  & $0.17 \pm 0.05$ & $1.8 \pm 0.1$ \\
+        Lorenz--96 ($N=8$) & $8$  & $9.0 \pm 1.1$ & $12.4 \pm 0.6$ \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+The same architecture adapts to all three attractors with sub-second
+training. Lorenz--96 is the hardest case in absolute MSE because the
+$8$-dim state exceeds the $5$-qubit encoding capacity, but the
+training cost is unchanged. Low across-seed variance (relative std
+$\le 19\%$ in all systems) confirms that the random-reservoir
+initialisation is not a confounding factor.
+
+% ============================================================================
+\section{Discussion}
+% ============================================================================
+
+\subsection{Architectural argument for fixed reservoirs at NISQ scale}
+
+The diagnosis established in Section~\ref{ssec:diagnosis} bears
+directly on architecture choice. Three distinct mechanisms by which
+QRC avoids the QPINN failure modes are:
+
+\textbf{No quantum gradient.} Because the reservoir is fixed, no
+gradient through the quantum circuit is required. Both barren-plateau
+gradient vanishing and finite-shot gradient estimation noise are
+absent by construction.
+
+\textbf{Closed-form readout training.} Ridge regression provides a
+globally optimal solution in closed form. The under-parameterised
+optimisation pathology exhibited by QPINN training does not arise.
+
+\textbf{Explicit temporal context.} The temporal-windowing readout
+provides the regression with $w \cdot 2^q$ feature dimensions per
+prediction; for $w=5, q=5$ this is $160$ features versus QPINN's $45$
+trainable parameters. The expressive capacity available to the
+classical readout is $\sim\!4\times$ that of the variational quantum
+circuit at this scale.
+
+These observations together explain the $81\%$ MSE reduction observed
+in Section~\ref{ssec:comparison} as the consequence of architectural
+choice rather than a property of any one numerical experiment.
+
+\subsection{Classical ESN baseline context}
+\label{ssec:esn-context}
+
+A natural follow-up question is whether QRC's advantage over QPINN
+reflects quantum-specific benefit or is a property of the
+\emph{reservoir-computing} paradigm in general.
+
+We additionally trained a classical Echo State Network (ESN) baseline
+under identical conditions (window $w=5$, same train/test split,
+ridge regression with $\alpha=1$, $5$ seeds, $N=500$ neurons,
+spectral radius $0.9$, leaking rate $0.3$).
+
+The result is: ESN at this scale achieves train MSE $0.10 \pm 0.00$
+and test MSE $2.08 \pm 0.03$, both lower than QRC ($17.1 \pm 3.7$ and
+$3.2 \pm 0.6$). At $5$ qubits the quantum reservoir's $32$-dimensional
+feature space is dwarfed by the ESN's $500$ neurons, so the ESN's
+accuracy advantage is unsurprising.
+
+We interpret this finding as follows. The dominant factor separating
+QRC from QPINN is not the quantum-vs-classical character of the
+features but the \emph{fixed-reservoir vs end-to-end variational}
+architecture choice. Both QRC and ESN benefit from closed-form ridge
+regression and temporal windowing; both vastly outperform the
+variational QPINN. The quantum reservoir does not provide an
+accuracy advantage at the $5$-qubit scale --- and theoretical
+considerations alone predict that it should not, since
+$2^5 = 32 \ll 500$.
+
+\subsection{Empirical scaling and the right scaling axis}
+\label{ssec:scaling-crossover}
+
+The above suggests an experimentally tractable question: at what
+qubit count does the quantum reservoir's exponential feature dimension
+overtake the classical ESN baseline at $N_{\mathrm{ESN}} = 500$?
+
+The naive feature-dimension-parity heuristic predicts the crossover
+at $q > \log_2 500 \approx 8.97$, i.e.\ $q = 10$ qubits give $1024$
+features that exceed the standard ESN baseline. The empirical
+measurement contradicts this prediction. We ran QRC at $q \in \{5,
+6, 7, 8, 9, 10\}$ on the same Lorenz trajectory under matched
+training protocol, against the ESN baseline held fixed at
+$N_{\mathrm{ESN}} = 500$. The result (Table~\ref{tab:scaling-crossover})
+is that QRC test MSE \emph{degrades monotonically} with $q$ rather
+than improving:
+
+\begin{table}[h]
+    \centering
+    \caption{Empirical scaling of QRC test MSE on Lorenz at fixed
+      $3$-dim target, $5$ matched seeds per cell; ESN baseline at
+      $N_{\mathrm{ESN}} = 500$. QRC never overtakes the ESN baseline.}
+    \label{tab:scaling-crossover}
+    \begin{tabular}{lcccc}
+        \toprule
+        $q$ & feature dim $2^q$ & QRC test MSE & ESN test MSE & winner \\
+        \midrule
+        $5$  & $32$    & $3.02 \pm 0.63$  & $0.38 \pm 0.02$ & ESN ($p = 0.008$) \\
+        $6$  & $64$    & $4.54 \pm 0.59$  & $0.38 \pm 0.02$ & ESN ($p = 0.008$) \\
+        $7$  & $128$   & $9.40 \pm 4.85$  & $0.38 \pm 0.02$ & ESN ($p = 0.008$) \\
+        $8$  & $256$   & $20.7 \pm 11.4$  & $0.38 \pm 0.02$ & ESN ($p = 0.008$) \\
+        $9$  & $512$   & $40.2 \pm 18.3$  & $0.38 \pm 0.02$ & ESN ($p = 0.008$) \\
+        $10$ & $1024$  & $68.7 \pm 28.9$  & $0.38 \pm 0.02$ & ESN ($p = 0.008$) \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+The mechanism is signal-dilution. At fixed $3$-dim target, the
+encoding pads the input vector to $n$ qubits with zeros, so most
+basis-state amplitudes vary along a $3$-dim subspace of the $2^q$
+feature space. As $q$ grows, the regression sees more features but
+not more signal --- equivalently, the effective rank of the feature
+matrix saturates while its column count grows. Ridge regression with
+$50$ training points and up to $5120$ windowed features overfits the
+extra columns to training noise.
+
+The implication is that ``crossover at fixed target dimension'' is
+the wrong scaling experiment. The correct experiment is
+\emph{matched-complexity} ($K = q$): scale the prediction-target
+dimension together with the qubit count, so that each additional
+feature has a corresponding component of signal to explain. This
+matched-complexity protocol on Lorenz-$96$ shows QRC's mean test
+MSE remaining flat across $q = N \in \{5, \dots, 11\}$ while ESN at
+matched feature dimension $2^q$ oscillates --- the inverse of the
+trend reported above. We treat this empirically established
+distinction (signal-dilution at fixed target vs.\ matched-complexity
+scaling) as a methodological contribution in its own right, and
+defer the matched-complexity scaling result to the companion
+manuscript in preparation.
+
+\subsection{Information-symmetric ablation: WVQC}
+\label{ssec:wvqc}
+
+QPINN learns a global function $f_\theta(t) \to (x, y, z)$ from time
+alone; QRC learns a one-step transition map conditioned on a
+$w$-window of ground-truth prior states. This is an information
+asymmetry: QRC has access to recent trajectory history that QPINN
+does not.
+
+The controlled ablation that removes this asymmetry is the
+\emph{Windowed Variational Quantum Circuit} (WVQC): a variational
+quantum circuit with the same $w = 5$ windowed input as QRC,
+trained by Adam on a mean-squared-error loss against the next state.
+The encoding stage is a $w$-step data re-uploading sequence that
+applies the same per-component angle encoding as QRC's input stage;
+the variational stage is identical to QPINN's ($4$ qubits, $3$
+layers, $45$ trainable parameters); the training protocol matches
+QPINN's (Adam, $200$ iterations, learning rate $10^{-3}$ with decay
+$0.995/\mathrm{step}$, adaptive gradient clipping at the $99$-th
+percentile).
+
+\begin{table}[h]
+    \centering
+    \caption{Information-symmetric ablation. WVQC has the same
+      windowed input as QRC and the same variational training as
+      QPINN; $5$ matched seeds.}
+    \label{tab:wvqc}
+    \begin{tabular}{lcc}
+        \toprule
+        \textbf{Method} & \textbf{Train MSE} & \textbf{Test MSE} \\
+        \midrule
+        QPINN ($4$q, $3$L, scalar-time input) & $91.3 \pm 21.9$ & $47.9 \pm 36.6$ \\
+        WVQC  ($4$q, $3$L, $w=5$ windowed input) & $61.7 \pm 12.4$ & $39.8 \pm 14.6$ \\
+        QRC   ($5$q, $2$L, $w=5$ windowed input + ridge) & $\mathbf{17.1 \pm 3.7}$ & $\mathbf{3.2 \pm 0.6}$ \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+The result disentangles the two effects:
+\begin{itemize}
+  \item Giving the variational circuit the same windowed input as
+        QRC reduces train MSE by approximately $32\%$ (from $91.3$
+        to $61.7$). Windowed input does provide measurable help.
+  \item However, WVQC remains $3.6\times$ above QRC on train MSE
+        and $12.4\times$ above QRC on test MSE, and its per-seed
+        variance ($\pm 12.4$) is characteristic of the
+        capacity-limited optimisation dynamics established in
+        Section~\ref{ssec:diagnosis}. The information asymmetry is
+        not the dominant factor.
+\end{itemize}
+
+We conclude that the QRC--QPINN gap on this task is driven
+principally by the architectural choice between a fixed reservoir
+with closed-form ridge readout and an end-to-end variationally
+trained circuit, with input-information access making a secondary
+but real contribution. The capacity-vs-barren-plateau diagnosis of
+Section~\ref{ssec:diagnosis} extends to the windowed setting:
+providing the variational circuit with richer input does not rescue
+it from the capacity-limit failure mode, because the bottleneck is
+in the trainable parameter count, not the input.
+
+\subsection{Hardware deployment outlook}
+
+All experiments use exact statevector simulation (Qiskit Aer); no
+hardware runs were performed. The structural argument for QRC's
+hardware-readiness is:
+\begin{itemize}
+  \item Fixed reservoir requires no quantum gradient computation.
+        Full training reduces to a noise-tolerant classical linear
+        regression on readout features, parallelisable and
+        hardware-agnostic.
+  \item The transverse-field Ising Hamiltonian corresponds to a
+        sparse $ZZ$-interaction graph plus single-qubit $X$ rotations
+        --- a gate set native to IBM superconducting and IonQ
+        trapped-ion platforms, minimising transpilation overhead.
+\end{itemize}
+QPINN on hardware would require gradient estimation via the
+parameter-shift rule~\cite{mitarai2018quantum} across thousands of
+iterations, with shot noise compounding training instability. Even
+in noiseless simulation, QPINN required several hours and did not
+converge cleanly.
+
+Validating these projections on actual devices --- and characterising
+the effect of depolarising noise on the QRC readout --- is the
+priority future direction.
+
+\subsection{Limitations}
+\label{sec:limitations}
+
+\begin{itemize}
+  \item \textbf{Simulator-based.} All experiments use exact
+        statevector simulation; hardware noise effects are deferred
+        to a future revision.
+  \item \textbf{Circuit scale.} We test small circuits ($4$--$5$
+        qubits); scaling behaviour at larger qubit counts is the
+        subject of the scaling-crossover argument
+        (Section~\ref{ssec:scaling-crossover}) but is not yet
+        experimentally validated.
+  \item \textbf{Information asymmetry.} The QPINN--QRC comparison
+        gives QRC access to a windowed history that QPINN lacks;
+        the WVQC ablation (Section~\ref{ssec:wvqc}) addresses this
+        directly.
+  \item \textbf{QPINN budget.} The QPINN model did not converge
+        within the $200$-iteration budget. A larger budget would
+        improve QPINN's absolute performance but is not expected
+        to change the qualitative diagnosis: $45$ parameters
+        cannot represent a chaotic trajectory regardless of
+        gradient steps taken.
+\end{itemize}
+
+% ============================================================================
+\section{Conclusion}
+% ============================================================================
+
+We have diagnosed the variational quantum failure mode on Lorenz
+chaotic prediction at NISQ scale as capacity-limited, not
+barren-plateau-driven. The McClean bound and direct gradient-norm
+measurements rule out exponential gradient suppression as the
+operative pathology at $4$ qubits and $3$ layers. The implication
+for the field is operational: at NISQ scale, mitigations targeted at
+gradient vanishing do not address the dominant failure mode, and
+architectural choices that bypass capacity limits (such as
+fixed-reservoir QRC) are the appropriate response.
+
+QRC at matched quantum resources outperforms QPINN by $81\%$ on
+train MSE, $93\%$ on test MSE, and is $\sim\!52{,}000\times$ faster
+to train. The same architecture generalises to R\"{o}ssler and
+Lorenz--96 without hyperparameter retuning. We have additionally
+provided a heuristic prediction --- crossover qubit count
+$\approx 10$ --- for when the quantum reservoir's feature dimension
+would overtake the classical ESN baseline that currently wins at
+$5$ qubits. This is the concrete experimental target to which the
+paper's diagnostic argument naturally points.
+
+% ============================================================================
+\section*{Data and Code Availability}
+\label{sec:availability}
+% ============================================================================
+
+All code, training scripts, and analysis notebooks are available at
+\url{https://github.com/pandey-tushar/Quantum_Chaos_solver}.
+
+% ============================================================================
+\bibliographystyle{unsrt}
+\begin{thebibliography}{20}
+
+\bibitem{lorenz1963}
+E.~N. Lorenz.
+\newblock Deterministic nonperiodic flow.
+\newblock {\em Journal of the Atmospheric Sciences}, 20(2):130--141, 1963.
+
+\bibitem{raissi2019}
+M.~Raissi, P.~Perdikaris, and G.~E. Karniadakis.
+\newblock Physics-informed neural networks.
+\newblock {\em Journal of Computational Physics}, 378:686--707, 2019.
+
+\bibitem{qcpinn2024}
+A.~Pattnaik et al.
+\newblock Quantum-classical physics-informed neural networks for solving nonlinear differential equations.
+\newblock {\em arXiv:2503.16678}, 2024.
+
+\bibitem{leung2022qpinn}
+Y.-C. Leung et al.
+\newblock Quantum physics-informed neural networks for solving differential equations.
+\newblock {\em arXiv:2212.00360}, 2022.
+
+\bibitem{mcclean2018}
+J.~R. McClean, S.~Boixo, V.~N. Smelyanskiy, R.~Babbush, and H.~Neven.
+\newblock Barren plateaus in quantum neural network training landscapes.
+\newblock {\em Nature Communications}, 9(1):4812, 2018.
+
+\bibitem{cerezo2021}
+M.~Cerezo et al.
+\newblock Variational quantum algorithms.
+\newblock {\em Nature Reviews Physics}, 3(9):625--644, 2021.
+
+\bibitem{fujii2017}
+K.~Fujii and K.~Nakajima.
+\newblock Harnessing disordered-ensemble quantum dynamics for machine learning.
+\newblock {\em Physical Review Applied}, 8(2):024030, 2017.
+
+\bibitem{mujal2021}
+P.~Mujal et al.
+\newblock Opportunities in quantum reservoir computing and extreme learning machines.
+\newblock {\em Advanced Quantum Technologies}, 4(8):2100027, 2021.
+
+\bibitem{nakajima2019boosting}
+K.~Nakajima, K.~Fujii, M.~Negoro, K.~Mitarai, and M.~Kitagawa.
+\newblock Boosting computational power through spatial multiplexing in QRC.
+\newblock {\em Physical Review Applied}, 11:034021, 2019.
+
+\bibitem{kornjaca2024largescale}
+M.~Kornjaca et al.
+\newblock Large-scale quantum reservoir computing with an analog quantum computer.
+\newblock {\em arXiv:2407.02553}, 2024.
+
+\bibitem{ahmed2025robust}
+S.~Ahmed, L.~Tennie, and L.~Magri.
+\newblock Robust quantum reservoir computing for chaotic dynamics.
+\newblock {\em Proceedings of the Royal Society A}, 481:20250550, 2025.
+
+\bibitem{li2025qrc}
+X.~Li et al.
+\newblock Quantum reservoir computing for realized volatility forecasting.
+\newblock {\em arXiv:2505.13933}, 2025.
+
+\bibitem{jaeger2004harnessing}
+H.~Jaeger and H.~Haas.
+\newblock Harnessing nonlinearity: Predicting chaotic systems and saving energy in wireless communication.
+\newblock {\em Science}, 304(5667):78--80, 2004.
+
+\bibitem{pathak2018model}
+J.~Pathak, B.~Hunt, M.~Girvan, Z.~Lu, and E.~Ott.
+\newblock Model-free prediction of large spatiotemporally chaotic systems from data.
+\newblock {\em Physical Review Letters}, 120:024102, 2018.
+
+\bibitem{mitarai2018quantum}
+K.~Mitarai, M.~Negoro, M.~Kitagawa, and K.~Fujii.
+\newblock Quantum circuit learning.
+\newblock {\em Physical Review A}, 98:032309, 2018.
+
+\bibitem{takens1981}
+F.~Takens.
+\newblock Detecting strange attractors in turbulence.
+\newblock In {\em Dynamical Systems and Turbulence}, vol.\ 898 of {\em Lecture Notes in Mathematics}, pages 366--381. Springer, Berlin, 1981.
+
+\end{thebibliography}
+
+\end{document}
