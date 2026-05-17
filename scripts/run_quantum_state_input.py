@@ -55,8 +55,61 @@ from run_quantum_input_experiment import (
     _apply_single_qubit_gate,
     make_esn, esn_run, rff_features,
     ridge_solve, windowed_features, feature_gram_condition,
-    _eval_windowed_no_window,
 )
+
+
+def eval_multitarget(F: np.ndarray, y: np.ndarray,
+                       horizons: list[int], train_frac: float,
+                       alpha: float = 1.0) -> dict:
+    """Train ridge readout, return per-target NRMSE arrays.
+
+    F: (T_feat, D) features.  y: (T_feat, K) targets (already aligned).
+    Output dict has 'k{h}_per_target_nrmse' = array of K NRMSEs and
+    'k{h}_mean_nrmse', 'k{h}_median_nrmse'.
+    """
+    T, K = y.shape
+    n_train = int(round(train_frac * T))
+    out = {"n_features": F.shape[1], "n_train": n_train, "n_targets": K,
+            "kappa": feature_gram_condition(F[:n_train], alpha=alpha)}
+    for h in horizons:
+        if T - h <= n_train + 5:
+            out[f"k{h}_mean_nrmse"] = float("nan")
+            continue
+        F_tr = F[:n_train - h]
+        y_tr = y[h:n_train]
+        F_te = F[n_train:T - h]
+        y_te = y[n_train + h:T]
+        W = ridge_solve(F_tr, y_tr, alpha=alpha)
+        y_pred = F_te @ W
+        # Per-target NRMSE
+        rmse_per = np.sqrt(np.mean((y_pred - y_te) ** 2, axis=0))
+        std_per = np.std(y_te, axis=0)
+        nrmse_per = rmse_per / (std_per + 1e-12)
+        out[f"k{h}_per_target_nrmse"] = nrmse_per.tolist()
+        out[f"k{h}_mean_nrmse"] = float(np.mean(nrmse_per))
+        out[f"k{h}_median_nrmse"] = float(np.median(nrmse_per))
+    return out
+
+
+def _eval_windowed_no_window(F, y_aligned, horizons, train_frac, seed):
+    """Single-target NRMSE (back-compat for pauli/renyi2 modes)."""
+    T = len(F)
+    n_train = int(round(train_frac * T))
+    results = {"kappa": feature_gram_condition(F[:n_train], alpha=1.0),
+                "n_features": F.shape[1], "n_train": n_train}
+    for h in horizons:
+        if T - h <= n_train + 5:
+            results[f"k{h}_nrmse"] = float("nan"); continue
+        F_tr = F[:n_train - h]
+        y_tr = y_aligned[h:n_train]
+        F_te = F[n_train:T - h]
+        y_te = y_aligned[n_train + h:T]
+        W = ridge_solve(F_tr, y_tr, alpha=1.0)
+        y_pred = F_te @ W
+        rmse = float(np.sqrt(np.mean((y_pred - y_te) ** 2)))
+        std = float(np.std(y_te))
+        results[f"k{h}_nrmse"] = rmse / (std + 1e-12)
+    return results
 
 
 # ---------------------------------------------------------------------------
@@ -213,28 +266,69 @@ def shadow_snapshots_estimate(psi: np.ndarray, n: int, M: int,
 def make_shadow_extractor(n_in: int, shots_per_qubit_total: int,
                             q_reservoir: int,
                             rng: np.random.Generator,
-                            include_2body: bool = True):
-    """Build a feature extractor that, given psi_in (2^n_in-dim), runs
-    Pauli-shadow tomography with the SAME total shot budget the QRC uses
-    (M = shots_per_qubit_total * q_reservoir), and returns estimates of:
-       <Z_i>, <X_i>, <Y_i>, and optionally all 2-body same-letter terms.
-    Feature dim: 3*n_in + (3*n_in*(n_in-1)/2 if include_2body else 0)
+                            include_2body: bool = True,
+                            mode: str = "noise_model"):
+    """Build a feature extractor estimating local Paulis of |psi_in> from
+    M = shots_per_qubit_total * q_reservoir Pauli-shadow shots.
+
+    mode='snapshots' : true per-shot simulation (exact, slow, O(M * 2^n_in * n_in)
+                       per timestep; only tractable for n_in <= ~6).
+    mode='noise_model': analytical -- compute exact <P> and add iid Gaussian
+                       noise with the Pauli-shadow per-feature variance
+                       Var[<P>_est] = (3^|P| - <P>^2) / M
+                       (Huang-Kueng-Preskill 2020, single-qubit Clifford
+                       protocol).  Matches per-feature variance to first
+                       order; cross-feature covariance is small for
+                       most Pauli pairs.  ~100x faster at n_in >= 8.
     """
     M = shots_per_qubit_total * q_reservoir
-    want = []
+    want_specs = []        # (pauli_label, sites_tuple)
+    want_ops = []           # the corresponding Pauli operator on n_in qubits
     for i in range(n_in):
-        for p in ("Z", "X", "Y"):
-            want.append((p, i))
+        for plabel in ("Z", "X", "Y"):
+            want_specs.append((plabel, (i,)))
+            want_ops.append(single_site(plabel, i, n_in))
     if include_2body:
         for i in range(n_in):
             for j in range(i + 1, n_in):
-                for p in ("Z", "X", "Y"):
-                    want.append((p, i, p, j))
+                for plabel in ("Z", "X", "Y"):
+                    want_specs.append((plabel, (i, j)))
+                    want_ops.append(two_site(plabel, i, plabel, j, n_in))
+    want_weights = np.array([len(s[1]) for s in want_specs])      # |P|
+    var_factors = (3.0 ** want_weights) / M                          # 3^|P| / M
+
+    if mode == "snapshots":
+        # Legacy slow path (kept for sanity-check on small n_in).
+        want_tuples = []
+        for (plabel, sites) in want_specs:
+            t = []
+            for s in sites:
+                t.extend([plabel, s])
+            want_tuples.append(tuple(t))
+
+        def step(psi_in):
+            return shadow_snapshots_estimate(psi_in, n_in, M, rng, want_tuples)
+
+        return step, len(want_specs)
+
+    if mode != "noise_model":
+        raise ValueError(f"Unknown shadow mode: {mode}")
 
     def step(psi_in: np.ndarray) -> np.ndarray:
-        return shadow_snapshots_estimate(psi_in, n_in, M, rng, want)
+        # Exact Pauli expectations
+        exact = np.empty(len(want_ops))
+        for k, O in enumerate(want_ops):
+            exact[k] = float(np.real(psi_in.conj() @ (O @ psi_in)))
+        # Per-feature variance bound (use 3^|P|/M; the -<P>^2 term only
+        # tightens it, so this is slightly conservative for shadows).
+        sigma = np.sqrt(np.maximum(var_factors - exact ** 2 / M, var_factors / 2))
+        # Actually: keep Var = 3^|P|/M (true upper-bound estimator variance),
+        # which is the worst-case classical-shadow guarantee.
+        sigma = np.sqrt(var_factors)
+        noise = rng.standard_normal(len(want_ops)) * sigma
+        return exact + noise
 
-    return step, len(want)
+    return step, len(want_specs)
 
 
 def make_cheating_classical_extractor(n_in: int, include_2body: bool = True):
@@ -283,9 +377,25 @@ def main():
     p.add_argument("--n-seeds", type=int, default=3)
     p.add_argument("--train-frac", type=float, default=0.7)
     p.add_argument("--shots-per-qubit", type=int, default=1024)
+    p.add_argument("--reservoir", choices=["tfim", "scram"], default="tfim",
+                    help="QRC reservoir Hamiltonian (TFIM nearest-neighbour "
+                          "or SYK-style all-to-all scrambling)")
+    p.add_argument("--tau", type=float, default=1.0,
+                    help="Reservoir evolution time per timestep (larger tau "
+                          "= more scrambling)")
     p.add_argument("--target-body", type=int, default=4,
                     help="body count k of the target Pauli string"
                           " (target = <X_0 X_1 ... X_{k-1}>)")
+    p.add_argument("--target-type",
+                    choices=["pauli", "renyi2", "multipauli"],
+                    default="pauli",
+                    help="pauli: <X_0..X_{k-1}>(t+horizon).  renyi2: "
+                          "S_2(rho_A) where A = first n_input//2 qubits. "
+                          "multipauli: BATCH of all 1-body and 2-body "
+                          "same-letter Paulis on input -- the Innocenti "
+                          "et al. niche, where QRC's single feature batch "
+                          "amortizes across many targets while shadows "
+                          "pay variance per target.")
     p.add_argument("--out-dir", type=str,
                     default=str(ROOT / "results" / "quantum_state_input"))
     args = p.parse_args()
@@ -311,45 +421,97 @@ def main():
     psi_t = evolve_states(H_tgt, psi0, times)
     print(f"  Evolved {args.n_steps} state-vector steps in {time.time()-t0:.1f}s")
 
-    # ---- Target observable: k-body X string on input state ----
-    k = args.target_body
-    target_op_in = np.eye(2 ** args.n_input, dtype=complex)
-    s = ["I"] * args.n_input
-    for i in range(min(k, args.n_input)):
-        s[i] = "X"
-    target_op_in = pauli_string("".join(s))
-    y_target = np.array([float(np.real(psi.conj() @ (target_op_in @ psi)))
-                           for psi in psi_t])[:, None]    # (T, 1)
-    print(f"  Target ranges {y_target.min():.3f}..{y_target.max():.3f}, "
+    # ---- Target functional on input state ----
+    if args.target_type == "pauli":
+        k = args.target_body
+        s = ["I"] * args.n_input
+        for i in range(min(k, args.n_input)):
+            s[i] = "X"
+        target_op_in = pauli_string("".join(s))
+        y_target = np.array([float(np.real(psi.conj() @ (target_op_in @ psi)))
+                               for psi in psi_t])[:, None]
+        target_desc = f"<{''.join(s)}>"
+    elif args.target_type == "multipauli":
+        # Batch: all 1-body Paulis (3*n) + all 2-body same-letter (3*n*(n-1)/2)
+        target_ops_list = []
+        target_labels = []
+        for i in range(args.n_input):
+            for plabel in ("X", "Y", "Z"):
+                target_ops_list.append(single_site(plabel, i, args.n_input))
+                target_labels.append(f"{plabel}_{i}")
+        for i in range(args.n_input):
+            for j in range(i + 1, args.n_input):
+                for plabel in ("X", "Y", "Z"):
+                    target_ops_list.append(
+                        two_site(plabel, i, plabel, j, args.n_input))
+                    target_labels.append(f"{plabel}_{i}{plabel}_{j}")
+        K = len(target_ops_list)
+        y_target = np.zeros((args.n_steps, K))
+        for ti, psi in enumerate(psi_t):
+            for ki, O in enumerate(target_ops_list):
+                y_target[ti, ki] = float(np.real(psi.conj() @ (O @ psi)))
+        target_desc = (f"BATCH of K={K} input observables (1-body + "
+                        f"2-body same-letter Paulis)")
+    elif args.target_type == "renyi2":
+        # S_2(rho_A) = -log Tr(rho_A^2);  rho_A = partial-trace over first
+        # n_input//2 qubits.  Computed via Schmidt SVD of |psi> reshaped.
+        nA = args.n_input // 2
+        nB = args.n_input - nA
+        y_list = []
+        for psi in psi_t:
+            psi_mat = psi.reshape((2 ** nA, 2 ** nB))
+            svals = np.linalg.svd(psi_mat, compute_uv=False)
+            p2 = (svals ** 2)
+            p2 = p2[p2 > 1e-14]
+            purity = float(np.sum(p2 ** 2))
+            y_list.append(-np.log(max(purity, 1e-14)))
+        y_target = np.array(y_list)[:, None]
+        target_desc = f"S_2(rho_A), A = first {nA} qubits"
+    else:
+        raise ValueError(args.target_type)
+    print(f"  Target = {target_desc};  range "
+            f"{y_target.min():.3f}..{y_target.max():.3f}, "
             f"std={y_target.std():.3f}")
 
     # ---- Per-seed evaluation ----
     method_results = {
         "QRC_state_injection": [],
         "Classical_shadows_RFF": [],
+        "Classical_shadows_ESN": [],
         "Cheating_classical_RFF": [],
         "Cheating_classical_ESN": [],
     }
     feat_dims = {}
+    is_multitarget = (args.target_type == "multipauli")
+    EVAL = (lambda F, y, hz, tf, sd:
+              eval_multitarget(F, y, hz, tf)) if is_multitarget else \
+            (lambda F, y, hz, tf, sd:
+              _eval_windowed_no_window(F, y, hz, tf, sd))
+    METRIC_KEY = "k{}_mean_nrmse" if is_multitarget else "k{}_nrmse"
+    def _fmt(r):
+        return "  ".join([f"k{h}={r[METRIC_KEY.format(h)]:.3f}"
+                            for h in args.horizons])
+
     for seed in range(args.n_seeds):
         print(f"\n=== seed {seed} ===")
         rng_qrc = np.random.default_rng(1000 + seed)
         rng_shadow = np.random.default_rng(2000 + seed)
-        H_tfim = tfim_hamiltonian(args.n_qubits, J=1.0, g=1.0)
+        if args.reservoir == "tfim":
+            H_res = tfim_hamiltonian(args.n_qubits, J=1.0, g=1.0)
+        else:
+            H_res = scrambling_hamiltonian(args.n_qubits, seed=seed)
 
         # QRC
         t0 = time.time()
         qrc_step, qrc_D = make_state_injection_qrc(
-            args.n_qubits, args.n_input, H_tfim,
+            args.n_qubits, args.n_input, H_res, tau=args.tau,
             shots_per_qubit=args.shots_per_qubit, rng=rng_qrc)
         feats_qrc = np.array([qrc_step(psi_t[t]) for t in range(args.n_steps)])
         feat_dims["QRC_state_injection"] = qrc_D
         Fw_qrc = windowed_features(feats_qrc, args.window)
-        r = _eval_windowed_no_window(Fw_qrc, y_target[args.window:],
-                                        args.horizons, args.train_frac, seed)
-        print(f"  QRC ({time.time()-t0:.1f}s, D={qrc_D}): "
-                f"k1={r['k1_nrmse']:.3f}  k5={r['k5_nrmse']:.3f}  "
-                f"k20={r['k20_nrmse']:.3f}")
+        r = EVAL(Fw_qrc, y_target[args.window:], args.horizons,
+                  args.train_frac, seed)
+        print(f"  QRC ({time.time()-t0:.1f}s, D={qrc_D}): {_fmt(r)}")
         method_results["QRC_state_injection"].append(r)
 
         # Shadows + RFF
@@ -361,15 +523,24 @@ def main():
                                     for t in range(args.n_steps)])
         feat_dims["Classical_shadows_RFF"] = shadow_D
         Fw_shadow_inputs = windowed_features(feats_shadow, args.window)
-        # RFF on the shadow features, matched to QRC effective dim D_eff
         D_eff_qrc = args.window * qrc_D
         rff_feats = rff_features(Fw_shadow_inputs, D_eff_qrc, seed)
-        r = _eval_windowed_no_window(rff_feats, y_target[args.window:],
-                                        args.horizons, args.train_frac, seed)
+        r = EVAL(rff_feats, y_target[args.window:], args.horizons,
+                  args.train_frac, seed)
         print(f"  Shadows+RFF ({time.time()-t0:.1f}s, D_in={shadow_D},"
-                f" D_rff={D_eff_qrc}): k1={r['k1_nrmse']:.3f}  "
-                f"k5={r['k5_nrmse']:.3f}  k20={r['k20_nrmse']:.3f}")
+                f" D_rff={D_eff_qrc}): {_fmt(r)}")
         method_results["Classical_shadows_RFF"].append(r)
+
+        # Shadows + ESN (shot-noisy shadow features, ESN readout) -- the
+        # fair shot-matched classical baseline with nonlinear readout.
+        t0 = time.time()
+        W_in_s, W_res_s, leak_s = make_esn(shadow_D, D_eff_qrc, seed)
+        acts_shadow = esn_run(feats_shadow, W_in_s, W_res_s, leak_s)
+        Fw_shadow_esn = windowed_features(acts_shadow, args.window)
+        r = EVAL(Fw_shadow_esn, y_target[args.window:], args.horizons,
+                  args.train_frac, seed)
+        print(f"  Shadows+ESN ({time.time()-t0:.1f}s, N={D_eff_qrc}): {_fmt(r)}")
+        method_results["Classical_shadows_ESN"].append(r)
 
         # Cheating classical + RFF (exact local Paulis, no shots)
         t0 = time.time()
@@ -380,11 +551,10 @@ def main():
         feat_dims["Cheating_classical_RFF"] = cheat_D
         Fw_cheat_inputs = windowed_features(feats_cheat, args.window)
         rff_feats_cheat = rff_features(Fw_cheat_inputs, D_eff_qrc, seed)
-        r = _eval_windowed_no_window(rff_feats_cheat, y_target[args.window:],
-                                        args.horizons, args.train_frac, seed)
+        r = EVAL(rff_feats_cheat, y_target[args.window:], args.horizons,
+                  args.train_frac, seed)
         print(f"  Cheat+RFF  ({time.time()-t0:.1f}s, D_in={cheat_D},"
-                f" D_rff={D_eff_qrc}): k1={r['k1_nrmse']:.3f}  "
-                f"k5={r['k5_nrmse']:.3f}  k20={r['k20_nrmse']:.3f}")
+                f" D_rff={D_eff_qrc}): {_fmt(r)}")
         method_results["Cheating_classical_RFF"].append(r)
 
         # Cheating classical + ESN
@@ -392,11 +562,9 @@ def main():
         W_in, W_res, leak = make_esn(cheat_D, D_eff_qrc, seed)
         acts = esn_run(feats_cheat, W_in, W_res, leak)
         Fw_esn = windowed_features(acts, args.window)
-        r = _eval_windowed_no_window(Fw_esn, y_target[args.window:],
-                                        args.horizons, args.train_frac, seed)
-        print(f"  Cheat+ESN  ({time.time()-t0:.1f}s, N={D_eff_qrc}): "
-                f"k1={r['k1_nrmse']:.3f}  k5={r['k5_nrmse']:.3f}  "
-                f"k20={r['k20_nrmse']:.3f}")
+        r = EVAL(Fw_esn, y_target[args.window:], args.horizons,
+                  args.train_frac, seed)
+        print(f"  Cheat+ESN  ({time.time()-t0:.1f}s, N={D_eff_qrc}): {_fmt(r)}")
         method_results["Cheating_classical_ESN"].append(r)
 
     # ---- Summary ----
@@ -404,10 +572,11 @@ def main():
                 "feature_dims": feat_dims,
                 "methods": method_results,
                 "per_method_means": {}}
+    metric_key = "k{}_mean_nrmse" if is_multitarget else "k{}_nrmse"
     for method, runs in method_results.items():
         means = {}
         for k_ in args.horizons:
-            vals = [r[f"k{k_}_nrmse"] for r in runs]
+            vals = [r[metric_key.format(k_)] for r in runs]
             means[f"k{k_}_mean"] = float(np.nanmean(vals))
             means[f"k{k_}_std"] = float(np.nanstd(vals))
         means["kappa_mean"] = float(np.nanmean([r["kappa"] for r in runs]))
@@ -417,13 +586,27 @@ def main():
         json.dump(summary, f, indent=2)
     print(f"\nSaved {out_json}")
 
-    print(f"\n=== Mean test NRMSE across {args.n_seeds} seeds ===")
+    print(f"\n=== Mean test NRMSE across {args.n_seeds} seeds "
+            f"({'mean-over-K-targets' if is_multitarget else 'single target'}) ===")
     print(f"{'method':<26}  " + "  ".join([f"k={h:<3}" for h in args.horizons]))
     for method, m in summary["per_method_means"].items():
         row = f"{method:<26}  " + "  ".join(
             [f"{m[f'k{h}_mean']:.3f}+/-{m[f'k{h}_std']:.3f}"
               for h in args.horizons])
         print(row)
+
+    if is_multitarget:
+        # Per-target breakdown: median NRMSE per method at k=1
+        print(f"\n=== Per-target NRMSE at k=1 (seed 0 only, for inspection) ===")
+        print(f"{'target':<14}  " + "  ".join(
+            [f"{m:<18}" for m in method_results.keys()]))
+        per_method_arrs = {m: np.array(runs[0]["k1_per_target_nrmse"])
+                              for m, runs in method_results.items()}
+        for ki, lbl in enumerate(target_labels):
+            row = f"{lbl:<14}  " + "  ".join(
+                [f"{per_method_arrs[m][ki]:<18.3f}"
+                  for m in method_results.keys()])
+            print(row)
 
 
 if __name__ == "__main__":
