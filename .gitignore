@@ -85,3 +85,7 @@ paper/*.blg
 
 # Claude local state
 .claude/
+
+# paper-4 quantum-input experiments
+!results/quantum_input*/
+!results/quantum_input*/**
