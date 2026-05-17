@@ -119,11 +119,14 @@ def xxz_chain_hamiltonian(n: int, J: float = 1.0, delta: float = 0.5,
 
 
 def build_target_hamiltonian(system: str, n: int, target_seed: int,
-                              xxz_delta: float = 0.5) -> np.ndarray:
+                              xxz_delta: float = 0.5,
+                              disorder: float = 0.5) -> np.ndarray:
     if system == "heisenberg":
-        return heisenberg_chain_hamiltonian(n, seed=target_seed)
+        return heisenberg_chain_hamiltonian(n, seed=target_seed,
+                                              disorder=disorder)
     elif system == "xxz":
-        return xxz_chain_hamiltonian(n, delta=xxz_delta, seed=target_seed)
+        return xxz_chain_hamiltonian(n, delta=xxz_delta, seed=target_seed,
+                                      disorder=disorder)
     raise ValueError(f"Unknown target system: {system}")
 
 
@@ -181,28 +184,52 @@ def scrambling_hamiltonian(n: int, seed: int = 0) -> np.ndarray:
 
 
 def make_qrc_extractor(n_qubits: int, n_input: int, H_reservoir: np.ndarray,
-                        tau: float = 1.0):
+                        tau: float = 1.0,
+                        shot_mode: str = "shots",
+                        shots_per_qubit: int = 1024,
+                        shot_features: str = "local_paulis",
+                        rng: np.random.Generator | None = None):
     """Build a recurrent QRC feature extractor.  At each time step:
-      1. Re-encode input via RY(pi * (x_i + 1)) on the first n_input qubits
-         (input expectation values are in [-1, 1] -> angles in [0, 2*pi]).
+      1. Re-encode input via RY(pi * (x_i + 1)) on the first n_input qubits.
       2. Evolve the full state under H_reservoir for time tau.
-      3. Return the 2^n_qubits basis-state probability vector.
+      3. SAMPLE M = shots_per_qubit * n_qubits shots in the computational
+         basis (hardware-realistic).
+      4. Return a hardware-realistic feature vector:
+           - shot_features="local_paulis": <Z_i> and <Z_i Z_j> from the
+             empirical samples.  D = q + q*(q-1)/2 = q(q+1)/2.
+           - shot_features="full_hist":   empirical 2^q histogram (only
+             tractable for q <= 11 or so).
+      For shot_mode="exact", uses exact probabilities (statevector, no
+      shot noise) - kept as a sanity-check reference.
     The state is carried over between time steps (recurrence)."""
     dim = 2 ** n_qubits
+    q = n_qubits
+    M = shots_per_qubit * q
     U_evolve = sla.expm(-1j * H_reservoir * tau)
+    if rng is None:
+        rng = np.random.default_rng(0)
+
+    # Precompute bit-tables for the 2^q basis (only safe for q <= ~20).
+    # signs[s, i] = (+1 if bit i of s is 0 else -1).  Used for <Z_i> and
+    # <Z_i Z_j> when forming features from the EXACT probabilities or from
+    # the binned multinomial counts (cheaper than per-sample unpacking
+    # when q is small).
+    use_basis_table = (q <= 14)
+    if use_basis_table:
+        idx = np.arange(dim, dtype=np.uint32)
+        bits = ((idx[:, None] >> np.arange(q)[::-1]) & 1).astype(np.int8)
+        signs = (1 - 2 * bits).astype(np.float64)         # (2^q, q), +/-1
+        iu, ju = np.triu_indices(q, k=1)
+        pair_signs = signs[:, iu] * signs[:, ju]            # (2^q, q*(q-1)/2)
+    else:
+        iu, ju = np.triu_indices(q, k=1)
 
     def init_state() -> np.ndarray:
-        # Start in |0...0>
         psi = np.zeros(dim, dtype=complex)
         psi[0] = 1.0
         return psi
 
     def reencode_step(psi: np.ndarray, x: np.ndarray) -> np.ndarray:
-        """Apply RY(pi*(x_i+1)) on each of the first n_input qubits,
-        then evolve."""
-        # Build the full Kronecker-product local rotation
-        # Each RY(theta) acts on one qubit; identity on the others.
-        # Implementation: apply per qubit by reshaping the state into a tensor.
         for qubit in range(n_input):
             theta = np.pi * (x[qubit] + 1.0)
             c, s = np.cos(theta / 2.0), np.sin(theta / 2.0)
@@ -213,7 +240,40 @@ def make_qrc_extractor(n_qubits: int, n_input: int, H_reservoir: np.ndarray,
         return psi
 
     def extract_features(psi: np.ndarray) -> np.ndarray:
-        return np.abs(psi) ** 2
+        p = np.abs(psi) ** 2
+        p_sum = p.sum()
+        if p_sum > 0:
+            p = p / p_sum
+
+        if shot_mode == "exact":
+            w = p                                # exact probabilities
+        elif use_basis_table:
+            counts = rng.multinomial(M, p).astype(np.float64)
+            w = counts / M                       # empirical, sums to 1
+        else:
+            # Large-q path: sample bitstring indices directly to avoid
+            # materializing a 2^q multinomial.  Still uses the 2^q-dim
+            # probability vector (cheap to keep in memory up to q ~ 22).
+            samples = rng.choice(dim, size=M, p=p)
+            sbits = ((samples[:, None] >> np.arange(q)[::-1]) & 1
+                       ).astype(np.int8)
+            ssigns = (1 - 2 * sbits).astype(np.float64)        # (M, q)
+            Z = ssigns.mean(axis=0)                              # (q,)
+            ZZ = (ssigns[:, iu] * ssigns[:, ju]).mean(axis=0)    # (q(q-1)/2,)
+            if shot_features == "full_hist":
+                # Build histogram from samples (sparse).
+                hist = np.bincount(samples, minlength=dim).astype(np.float64) / M
+                return hist
+            return np.concatenate([Z, ZZ])
+
+        # Compute features from weight vector w (either exact p or
+        # M-binned multinomial frequencies).  Uses the precomputed basis
+        # table for speed.
+        if shot_features == "full_hist":
+            return w
+        Z  = w @ signs                                       # (q,)
+        ZZ = w @ pair_signs                                  # (q(q-1)/2,)
+        return np.concatenate([Z, ZZ])
 
     return init_state, reencode_step, extract_features
 
@@ -275,8 +335,18 @@ def rff_features(inputs, n_features: int, seed: int, gamma: float | None = None)
 # Common ridge solve ---------------------------------------------------------
 
 def ridge_solve(F: np.ndarray, S: np.ndarray, alpha: float = 1.0) -> np.ndarray:
-    A = F.T @ F + alpha * np.eye(F.shape[1])
-    return np.linalg.solve(A, F.T @ S)
+    """Ridge regression: W* = (F^T F + alpha I)^-1 F^T S.
+
+    Use the *dual* formulation when D > T to avoid forming a D x D
+    Gram matrix (which can OOM for D=40960 at q=13).
+    Dual identity: W = F^T (F F^T + alpha I)^-1 S, valid for any alpha > 0."""
+    n, d = F.shape
+    if d <= n:
+        A = F.T @ F + alpha * np.eye(d)
+        return np.linalg.solve(A, F.T @ S)
+    # Dual form: F F^T is n x n (much smaller when d > n)
+    A = F @ F.T + alpha * np.eye(n)
+    return F.T @ np.linalg.solve(A, S)
 
 
 def windowed_features(F: np.ndarray, window: int) -> np.ndarray:
@@ -299,10 +369,15 @@ def feature_gram_condition(F: np.ndarray, alpha: float = 1.0) -> float:
 # ---------------------------------------------------------------------------
 
 def eval_qrc(x_input, y_target, n_qubits, H_reservoir, window, horizons,
-              train_frac, seed):
+              train_frac, seed,
+              shot_mode="shots", shots_per_qubit=1024,
+              shot_features="local_paulis"):
     """Build QRC features and evaluate at each horizon."""
+    rng = np.random.default_rng(seed)
     init_state, reencode_step, extract_features = make_qrc_extractor(
-        n_qubits, x_input.shape[1], H_reservoir)
+        n_qubits, x_input.shape[1], H_reservoir,
+        shot_mode=shot_mode, shots_per_qubit=shots_per_qubit,
+        shot_features=shot_features, rng=rng)
     psi = init_state()
     feats = []
     for t in range(len(x_input)):
@@ -382,8 +457,20 @@ def main():
                     default="heisenberg")
     p.add_argument("--target-seed", type=int, default=42)
     p.add_argument("--xxz-delta", type=float, default=0.5)
+    p.add_argument("--target-disorder", type=float, default=0.5)
     p.add_argument("--out-dir", type=str,
                     default=str(ROOT / "results" / "quantum_input"))
+    # Hardware-realistic shot sampling
+    p.add_argument("--shot-mode", choices=["shots", "exact"], default="shots",
+                    help="'shots' = sample M=shots_per_qubit*q shots/timestep "
+                          "(hardware-realistic); 'exact' = use statevector "
+                          "probabilities (sanity check, unphysical for q>~12)")
+    p.add_argument("--shots-per-qubit", type=int, default=1024,
+                    help="M = shots_per_qubit * n_qubits shots per timestep")
+    p.add_argument("--shot-features", choices=["local_paulis", "full_hist"],
+                    default="local_paulis",
+                    help="local_paulis: <Z_i> + <Z_i Z_j>, D = q(q+1)/2. "
+                          "full_hist: empirical 2^q histogram (q <= ~11).")
     args = p.parse_args()
 
     out_dir = Path(args.out_dir); out_dir.mkdir(parents=True, exist_ok=True)
@@ -394,7 +481,8 @@ def main():
            f" (target_seed={args.target_seed}"
            f"{f', delta={args.xxz_delta}' if args.target_system == 'xxz' else ''}) ===")
     H_tgt = build_target_hamiltonian(args.target_system, args.n_target,
-                                       args.target_seed, xxz_delta=args.xxz_delta)
+                                       args.target_seed, xxz_delta=args.xxz_delta,
+                                       disorder=args.target_disorder)
     # Start in |+>^n (uniform superposition)
     psi0 = np.ones(2 ** args.n_target, dtype=complex) / np.sqrt(2 ** args.n_target)
     times = np.linspace(0, args.t_max, args.n_steps)
@@ -427,15 +515,21 @@ def main():
     x_input = expectation_values(psi_t, input_ops)
     print(f"  done in {time.time()-t0:.1f}s   |y_target| ranges {y_target.min():.3f} to {y_target.max():.3f}")
 
-    feature_dim = 2 ** args.n_qubits
-
-    # ---- Per-seed evaluation ----
-    # RFF_matched_dim:    D = 2^q (matches per-timestep feature dim).  Unfair
-    #                       to QRC because after windowing QRC has w*2^q
-    #                       effective features.
-    # RFF_matched_effdim: D = w * 2^q (matches QRC's effective feature dim
-    #                       after windowing).  This is the fair comparison.
+    # Hardware-realistic feature dim depends on shot_features choice.
+    # local_paulis: D = q + q*(q-1)/2 = q(q+1)/2.
+    # full_hist:    D = 2^q (only meaningful for q <= ~11; warn otherwise).
+    q = args.n_qubits
+    if args.shot_features == "local_paulis":
+        feature_dim = q * (q + 1) // 2
+    else:
+        feature_dim = 2 ** q
+    if args.shot_features == "full_hist" and q > 11:
+        print(f"  WARNING: full_hist at q={q} -> {2**q} features, but only "
+                f"{args.shots_per_qubit*q} shots/step. Most bins will be 0.")
     effective_dim = args.window * feature_dim
+    print(f"  shot_mode={args.shot_mode}, shot_features={args.shot_features}, "
+            f"M={args.shots_per_qubit*q} shots/step, D={feature_dim} per step, "
+            f"D_eff (windowed)={effective_dim}")
     methods_results = {"TFIM_QRC": [], "SCRAM_QRC": [], "ESN_matched": [],
                        "RFF_matched_dim": [], "RFF_matched_effdim": []}
     for seed in range(args.n_seeds):
@@ -446,13 +540,19 @@ def main():
 
         t0 = time.time()
         r_tfim = eval_qrc(x_input, y_target, args.n_qubits, H_tfim,
-                            args.window, args.horizons, args.train_frac, seed)
+                            args.window, args.horizons, args.train_frac, seed,
+                            shot_mode=args.shot_mode,
+                            shots_per_qubit=args.shots_per_qubit,
+                            shot_features=args.shot_features)
         print(f"  TFIM_QRC ({time.time()-t0:.1f}s): k1={r_tfim['k1_nrmse']:.3f}  k5={r_tfim['k5_nrmse']:.3f}  k20={r_tfim['k20_nrmse']:.3f}  kappa={r_tfim['kappa']:.2e}")
         methods_results["TFIM_QRC"].append(r_tfim)
 
         t0 = time.time()
         r_scram = eval_qrc(x_input, y_target, args.n_qubits, H_scram,
-                             args.window, args.horizons, args.train_frac, seed)
+                             args.window, args.horizons, args.train_frac, seed,
+                             shot_mode=args.shot_mode,
+                             shots_per_qubit=args.shots_per_qubit,
+                             shot_features=args.shot_features)
         print(f"  SCRAM_QRC ({time.time()-t0:.1f}s): k1={r_scram['k1_nrmse']:.3f}  k5={r_scram['k5_nrmse']:.3f}  k20={r_scram['k20_nrmse']:.3f}  kappa={r_scram['kappa']:.2e}")
         methods_results["SCRAM_QRC"].append(r_scram)
 
