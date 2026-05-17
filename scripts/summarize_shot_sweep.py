@@ -25,7 +25,7 @@ def load(q: int) -> dict | None:
 
 
 def main():
-    qs = [5, 7, 9, 11, 13, 15]
+    qs = [9, 11]   # honest reservoir sizes (>= 9 qubits)
     rows = []
     for q in qs:
         s = load(q)

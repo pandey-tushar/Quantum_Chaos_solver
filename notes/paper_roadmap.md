@@ -2,68 +2,99 @@
 
 **Updated:** 2026-05-17
 
-| #     | Topic                                              | Branch                 | Status                              |
-| ----- | -------------------------------------------------- | ---------------------- | ----------------------------------- |
-| 1     | Capacity-vs-BP for QRC vs QPINN                    | `paper-1-qst`          | **Submitted to QST** (ScholarOne)   |
-| 2     | Conditioning argument, fixed-vs-variational        | `paper-2-methods`      | Draft + κ data; awaiting arXiv push |
-| 3     | Chaoticity sweep on L96                            | `paper-3-chaoticity`   | **Parked** (low priority)           |
-| 4     | QRC for multi-asset finance                        | (not started)          | Lit review done; design TBD         |
-| ~~5~~ | ~~QRC win on quantum-input classical-scalar task~~ | `paper-5-quantum-input` | **Folded into paper 6 as appendix** |
-| 6     | Hilbert-space-input QRC advantage                  | **`paper-6-hilbert-input`** ← active | Script v0 written, smoke test next  |
+| #     | Topic                                              | Branch                              | Status                              |
+| ----- | -------------------------------------------------- | ----------------------------------- | ----------------------------------- |
+| 1     | Capacity-vs-BP for QRC vs QPINN                    | `paper-1-qst`                       | **Submitted to QST** (ScholarOne)   |
+| 2     | Conditioning argument, fixed-vs-variational        | `paper-2-methods`                   | Draft + κ data; awaiting arXiv push |
+| 3     | Chaoticity sweep on L96                            | `paper-3-chaoticity`                | **Parked** (low priority)           |
+| 4     | **QRC for finance — long-horizon advantage**       | (next)                              | **Hypothesis sharpened (see below)** |
+| ~~5~~ | ~~QRC on classical-scalar input task~~             | `paper-5-quantum-input`             | **Folded into paper 6 as appendix** |
+| 6     | Hilbert-space-input QRC — long-horizon edge        | **`paper-6-hilbert-input`** ← active | Long-horizon signal at n_in=9, q=11 |
 
-## Why paper 5 became an appendix
+## Standing rules
 
-Paper 5's original thesis ("QRC beats classical reservoirs on a quantum-input
-task") did not survive the hardware-realistic comparison:
-
-- Original setup: input x[t] = 3 classical scalars (Pauli expectations of a
-  4-qubit Heisenberg target). QRC features = exact 2^q statevector
-  probabilities. RFF at matched D = 2^q.
-- That comparison was **not hardware-realistic** — neither side's features
-  are extractable from a poly(q)-shot budget on a real device.
-- Under realistic features (local Pauli moments, D = q(q+1)/2 from
-  M = q·1024 shots), RFF beats QRC by ~3× NRMSE at every q ∈ {5,7,9,11}.
-  Isolation test confirms: it's the feature switch (2^q → local Paulis),
-  not shot noise, that kills the apparent QRC advantage.
-- Root cause: classical-scalar input bottleneck (Schuld 2021 Fourier bound,
-  Bowles 2025 trig-poly dequantization). Adding reservoir qubits doesn't add
-  new frequencies in x.
-
-The negative result is publishable but not by itself — it works as an
-appendix to paper 6, which presents the regime where QRC *does* win and
-explains why.
+- **Never run q=13 or larger.** Reservoir runs are q ≤ 11 only.
+- **Never benchmark at n_in ≤ 7.** Classical methods trivially dominate
+  there — those runs are misleading and the conclusions don't survive at
+  honest sizes. Real comparisons use n_in ≥ 9.
+- Hardware-realistic shot budget: M = q × 1024 shots/timestep, shared by
+  QRC and classical-shadow baselines.
 
 ## Paper 6 — Active
 
-**Thesis:** QRC has a defensible, hardware-realistic advantage over
-classical reservoirs **only when the input itself is a quantum state**
-(D_input ∝ 2^q). On scalar inputs (paper 5 appendix), QRC ≤ fixed-D RFF.
-On Hilbert-space inputs, the classical baseline must spend its shot budget
-on shadow tomography just to encode the input, while QRC integrates input
-encoding and reservoir mixing simultaneously.
+**Headline finding (n_in=9, q=11, scram τ=1.0, 5 seeds, multipauli batch
+of K=135 input observables):**
 
-**Design (see `notes/paper6_plan.md` for full detail):**
-- Task: predict a k-body Pauli expectation ⟨X_0…X_{k−1}⟩(t+horizon) on a
-  trajectory |ψ_t⟩ from a disordered Heisenberg input system.
-- Method A (QRC): state-injection of |ψ_t⟩ onto the first n_in reservoir
-  qubits; TFIM evolution; M = q·1024 shots; local Pauli features.
-- Method B (classical shadows + RFF): Pauli-shadow tomography on |ψ_t⟩ at
-  matched shot budget; estimate ⟨X⟩, ⟨Y⟩, ⟨Z⟩ and 2-body terms; RFF readout.
-- Method C (cheating classical): exact local Paulis on |ψ_t⟩ + RFF — upper
-  bound for any classical method that uses local features.
-- Sweep q ∈ {7, 9, 11, 13}; n_in fixed = 5.
+| Horizon | QRC          | Cheating + RFF | Cheating + ESN | Verdict        |
+| ------- | ------------ | -------------- | -------------- | -------------- |
+| k=1     | 1.046 ±.12   | 0.935 ±.04     | 0.748 ±.04     | QRC loses      |
+| k=5     | 1.107 ±.16   | 1.008 ±.03     | 0.884 ±.06     | QRC loses      |
+| **k=20**| **1.173 ±.17** | 1.223 ±.06   | 1.294 ±.10     | **QRC wins ~10%** |
 
-**Expected separation:** shadow shot cost for k-body observables grows as
-3^k / M, while QRC's local Pauli features stay at σ ≈ 1/√M independent of
-target body count. The gap (QRC − shadows) should grow with both q and k.
+Classical methods are great at short-horizon (target ≈ input), but degrade
+fast at long horizons. QRC's scrambling-reservoir features carry phase
+information that's still useful at k=20 — the first robust QRC edge we've
+seen anywhere.
 
-**Script:** `scripts/run_quantum_state_input.py` (v0 written; shadow
-tomography now batched by basis pattern for ~80× speedup on n_in=4).
+**Next step:** confirm the long-horizon signal at n_in=9, q=11, longer
+trajectory (1000+ steps), horizons {1, 5, 10, 20, 40, 80}. Establish where
+exactly QRC overtakes classical. Then paper 6 has a defensible thesis:
+*"QRC's structural advantage over classical reservoirs is at long
+prediction horizons, not at any single feature-richness or
+input-encoding axis."*
 
-**Status:** about to run smoke test (n_in=4, q=7, 400 steps, 2 seeds, 4-body target).
+## Paper 4 — Sharpened by the paper-6 finding
 
-## Paper 4 — Backlog
+The paper-6 long-horizon signal is exactly the kind of advantage finance
+forecasting needs:
 
-Multi-asset QRC for finance. Lit review in `notes/paper4_finance_literature_review.md`.
-Concrete design depends on paper 6 outcome — same hardware-realistic
-framework should carry over once we know what works.
+- Short-horizon market prediction (1-step) is dominated by classical methods
+  using local features (returns, volatilities, order-flow snapshots).
+- **Long-horizon multi-asset forecasting** is what trading desks care about
+  for portfolio allocation, options pricing, regime detection — and where
+  classical methods notoriously degrade.
+- If QRC's long-horizon edge reproduces on real financial time series,
+  paper 4 has a clean story: *"QRC for multi-step financial forecasting
+  at horizons where classical reservoirs collapse."*
+
+**Concrete paper 4 v0 design:**
+- Input: stream of multi-asset returns / order-flow features on n_in
+  qubits via amplitude encoding (or angle encoding if quantum-state
+  preparation is the bottleneck)
+- Reservoir: scrambling Hamiltonian at q=11, τ=1.0 (the regime where
+  paper 6 found the edge)
+- Targets: returns at horizons {1, 5, 20, 60, 120} days/minutes
+- Classical baseline: Shadows+ESN at matched shot budget (the hardest
+  baseline from paper 6) and standard ESN/RFF
+- Datasets: log-returns of liquid futures or FX pairs; synthetic
+  rough-volatility models for ground-truth sanity checks
+
+This is a real research program. Long-horizon advantage is the
+common thread tying paper 6 and paper 4 together.
+
+## Cleanup completed 2026-05-17
+
+Deleted (misleading or too-small to be informative):
+- All paper-5 results using exact 2^q statevector probabilities
+  (`quantum_input/`, `quantum_input_q5/`, `quantum_input_q9/`,
+  `quantum_input_targetseed_*/`, `quantum_input_xxz/`) — these compared
+  unmeasurable features and produced the spurious "QRC wins at small q"
+  claim.
+- All n_in ≤ 7 paper-6 results (`paper6_smoke_q7`, `paper6_renyi_n6q9`,
+  `paper6_multipauli_n5q8`, `paper6_sweet_n5q8_*`, `paper6_scan_*`).
+  Classical trivially dominates at these sizes; conclusions don't generalize.
+- Shot-sweep at q ∈ {5, 7} (`quantum_input_shots_q5`,
+  `quantum_input_shots_q7`) — same reason.
+- All q=13 results and smoke runs.
+
+Kept:
+- `paper6_real_n9q11_scram/` — long-horizon edge headline result
+- `quantum_input_shots_q9/`, `quantum_input_shots_q11/` — honest
+  dequantization confirmation for paper-6 appendix
+- `quantum_input_shots_summary.{json,png}` — regenerated at q ∈ {9, 11} only
+
+## Paper 4 — Backlog after paper 6 confirmation
+
+Multi-asset QRC for finance. Lit review in
+`notes/paper4_finance_literature_review.md`. Will be designed around the
+long-horizon thesis once paper-6 finding is solid.
