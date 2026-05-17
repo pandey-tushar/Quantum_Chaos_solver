@@ -1,10 +1,21 @@
 # Paper 6: Hardware-Realistic Quantum Reservoir Advantage on Hilbert-Space Inputs
 
-**Status:** v0 script written; smoke test pending (2026-05-17)
-**Branch:** `paper-6-hilbert-input` (created off `paper-5-quantum-input`)
-**Absorbs:** all paper 5 work — the classical-scalar-input results become
+**Status:** Experiments COMPLETE; ready for paper write-up (2026-05-17)
+**Branch:** `paper-6-hilbert-input`
+**Absorbs:** all paper 5 work — classical-scalar-input results become
 Appendix A ("hardware-realistic dequantization on scalar inputs").
-See `notes/paper_roadmap.md` for the overall paper map.
+
+## Confirmed result
+
+3 target seeds × {5,3,3} reservoir seeds = 15 runs at n_in=9, q=11,
+scram τ=1.0, multipauli K=135 targets, horizons {1, 5, 10, 20, 40, 80}:
+
+**QRC wins by 12% at k=80, ties at k=40, loses at k≤20.**
+ESN catastrophically collapses at long horizons (k=80 NRMSE ~1.6).
+QRC has lowest variance (±0.14) → most stable predictor.
+
+Headline plot: `results/paper6_longhz_aggregate.png`.
+See `notes/paper_roadmap.md` for the full table and outstanding work.
 
 ## One-Line Thesis
 
