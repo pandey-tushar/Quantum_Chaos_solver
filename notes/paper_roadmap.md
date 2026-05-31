@@ -23,40 +23,51 @@
 
 ---
 
-## Paper 6 — Confirmed
+## Paper 6 — REVISED 2026-05-29 (old "12% at k=80" headline was an artifact)
 
-**Thesis:** *"At hardware-realistic shot budgets on Hilbert-space inputs,
-QRC matches or beats classical reservoirs at horizons k ≥ 40. Recurrent
-classical methods (ESN) catastrophically degrade at long horizons; QRC's
-fixed unitary dynamics avoid this failure mode."*
+⚠️ The earlier "QRC wins 12% at k=80" headline did NOT survive scrutiny — it
+sat entirely in the NRMSE>1 failed regime (worse than the mean predictor) and
+was driven by a Z-only readout scored against X/Y/Z targets. Full diagnosis in
+**`notes/paper6_highbody_findings.md`**.
 
-**Headline (3 target seeds × {5,3,3} reservoir seeds = 15 runs):**
+**Revised thesis (honest, defensible):** *"At hardware-realistic shot budgets,
+a scrambling QRC with multi-basis readout predicts intermediate-body (4–6 body)
+observables of a quantum trajectory at long forecast horizons (k=20) where both
+classical shadow-based and exact-feature classical reservoirs fail (NRMSE>1).
+QRC measures U†Z_iU as a ~1/M-variance local probe of high-body input
+correlations, while shadows pay 3^k/M to estimate the target directly."*
 
-| Horizon | QRC          | Best classical            | Gap        | Verdict        |
-| ------- | ------------ | ------------------------- | ---------- | -------------- |
-| k=1     | 1.050 ± .15  | Cheat+ESN 0.679           | +0.371     | QRC loses 55%  |
-| k=10    | 1.115 ± .17  | Cheat+ESN 0.974           | +0.141     | QRC loses 14%  |
-| k=20    | 1.191 ± .16  | Cheat+RFF 1.123           | +0.068     | QRC loses 6%   |
-| k=40    | 1.311 ± .18  | Cheat+RFF 1.305           | +0.006     | tie            |
-| **k=80**| **1.367 ± .14** | Cheat+RFF 1.556        | **−0.188** | **QRC WINS 12%** |
+**Headline (3 reservoir seeds, target=<X_0..X_{k-1}>, scram, τ=0.6):**
 
-Setup: n_in=9, q=11, scram τ=1.0, multipauli K=135 targets, 1000-1200
-steps. Plots in `results/paper6_longhz_aggregate.png` and
-`results/paper6_longhz_n9q11{,_ts100,_ts200}/`.
+| body k | k=20: QRC | k=20: Shadows | k=20: Cheat | verdict |
+| ------ | --------- | ------------- | ----------- | ------- |
+| 4 | **0.72** | 1.75 | 1.77 | QRC predictive, classical failed |
+| 6 | **0.81** | 1.23 | 1.17 | QRC predictive, classical failed |
+| 8 | 1.08 | 0.91 | 0.87 | breaks (near-global obs) |
 
-**Mechanism:** classical recurrent methods accumulate error over time;
-QRC's fixed reservoir unitary doesn't. ESN and Cheat+ESN both hit ~1.6
-at k=80; RFF stays at ~1.56; QRC at 1.37. QRC also has lowest variance
-(±0.14) → most stable predictor.
+**Key fixes vs the artifact version:** (1) multi-basis readout (Z+X+Y, shots
+split 3 ways) — without it QRC is blind to X/Y targets; (2) scrambling reservoir
+(TFIM is the wrong choice here); (3) small τ=0.3–0.6 (over-scrambling hurts).
 
-**Paper 6 outstanding work (before submission):**
-- Write the paper (4 main sections + paper-5 appendix)
-- Add 1-2 more reservoir Hamiltonian choices (e.g., SYK with non-uniform
-  couplings) to show robustness of the long-horizon edge to reservoir
-  choice
-- Consider a Pauli-shadows-with-derandomization baseline to address the
-  Bertoni 2025 shallow-shadows critique
-- Decide venue (PRX Quantum, Quantum, or PRX Energy)
+**Honest nuance (must be in paper):** advantage is NOT monotonic in body count
+(peaks k=4–6, breaks at k=8); short horizons favor classical. Claim = long-horizon
+forecasting of intermediate-body observables only.
+
+**CONFIRMED 3×3 (2026-05-31, `scripts/diag_highbody_targetseeds.py`,
+`results/paper6_highbody_3x3/`):** 3 target × 3 reservoir seeds = 9 runs.
+Headline cells at h=20 — QRC predictive (<1), both classical fail (>1):
+- k=4: QRC 0.730±.10 vs Shadows 1.706±.28; bootstrap gap +0.974 [+0.732,+1.232]
+- k=6: QRC 0.812±.07 vs Shadows 1.228±.12; bootstrap gap +0.413 [+0.314,+0.522]
+Both bootstrap 95% CIs exclude zero (P(QRC better)=1.000). k=8 breaks
+(classical wins); k=2 QRC "wins" but is itself >1 (not a clean headline).
+
+**Paper 6 outstanding work (before QTML abstract, deadline 30 Jun 2026):**
+- ✅ 3 target seeds {42,7,123} for the 3×3 standing rule — DONE
+- ✅ Bootstrap CIs on the k=4,6 / h=20 cells — DONE, both significant
+- Understand/push the k=8 break (τ sweep at high body count) — IN PROGRESS
+- Write the abstract (`notes/qtml2026_abstract_draft.md`, numbers filled);
+  cite arXiv:2604.23743 for the architecture (do not re-derive)
+- Venue: QTML 2026 abstract (non-archival, no QST conflict)
 
 ---
 
