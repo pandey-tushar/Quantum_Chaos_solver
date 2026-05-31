@@ -75,34 +75,64 @@ correlations into local, low-variance probes.
 - So the precise claim is: *long-horizon forecasting of intermediate-body
   quantum-trajectory observables.*
 
-## CONFIRMED at 3×3 (2026-05-31) — `scripts/diag_highbody_targetseeds.py`
+## 3×3 RESULT (2026-05-31) — `scripts/diag_highbody_targetseeds.py`
 
 3 target seeds {42,7,123} × 3 reservoir seeds {0,1,2} = 9 runs.
-Source: `results/paper6_highbody_3x3/summary.json`.
+Source: `results/paper6_highbody_3x3/summary.json` (real numbers).
 
-| body k | h=20 QRC | h=20 Shadows | h=20 Cheat | verdict |
-|--------|----------|--------------|------------|---------|
-| 2 | 1.156±.10 | 2.211±.36 | 2.226±.36 | QRC wins but NOT predictive (>1) |
-| 4 | **0.730±.10** | 1.706±.28 | 1.703±.27 | QRC predictive, classical failed |
-| 6 | **0.812±.07** | 1.228±.12 | 1.156±.16 | QRC predictive, classical failed |
-| 8 | 1.063±.10 | 0.918±.08 | 0.872±.08 | breaks (classical wins) |
+⚠️ **The 1-seed numbers did NOT hold up at 3×3.** Seed 42 was favorable;
+seeds 7 and 123 are much worse, and the across-seed std is large.
 
-**Paired bootstrap CIs (N=2000) on the headline cells — both significant:**
-- k=4 h=20: gap (Shadows−QRC) = +0.974, 95% CI [+0.732, +1.232], P(QRC better)=1.000
-- k=6 h=20: gap = +0.413, 95% CI [+0.314, +0.522], P(QRC better)=1.000
+| body k | h=20 QRC | h=20 Shadows | h=20 Cheat | QRC predictive (<1)? |
+|--------|----------|--------------|------------|----------------------|
+| 2 | 1.339±.20 | 1.987±.43 | 1.974±.42 | NO (>1) |
+| 4 | **0.986±.24** | 1.965±.59 | 1.959±.61 | yes, but MARGINAL |
+| 6 | 1.172±.44 | 1.809±.97 | 1.739±.94 | NO (>1) |
+| 8 | 1.278±.26 | 1.054±.08 | 1.006±.14 | shadows win |
 
-The 3×3 means match the original 1-seed numbers (k4: 0.72→0.730, k6: 0.81→0.812)
-→ robust. Standing-rule 3×3 requirement satisfied; bootstrap confirms the
-QRC-vs-Shadows gap excludes zero at both headline cells.
+For context, shorter horizons (k=4): h=1 QRC 0.991 vs Shadows 0.803 (shadows
+win); h=5 QRC 1.002 vs Shadows 1.062 (~tie, both near 1).
 
-## Still outstanding before the QTML abstract
+**Paired bootstrap CIs (N=2000), gap = NRMSE(Shadows) − NRMSE(QRC):**
+- k=4 h=20: +0.927, 95% CI [+0.889, +0.967], P(QRC better)=1.000
+- k=6 h=20: +0.321, 95% CI [+0.290, +0.351], P(QRC better)=1.000
 
-1. **Understand / push the k=8 break.** Does larger tau extend the win to
-   higher body count? (q capped at 11; tau sweep at k=8 is cheap.) — IN PROGRESS
-2. **One more reservoir family** (different scram seed distribution) for
-   robustness of the "scram works, TFIM doesn't" claim. (optional)
-3. **Write + trim the QTML abstract** (`notes/qtml2026_abstract_draft.md`,
-   numbers already filled). Cite arXiv:2604.23743.
+⚠️ **Bootstrap caveat:** these CIs pool test-point residuals across runs, so
+they capture within-sample noise, NOT across-seed/Hamiltonian variance. The
+across-seed std (±0.24 at k=4, ±0.44 at k=6) is the honest uncertainty for
+"does this hold across Hamiltonians." A bootstrap that resamples whole seeds
+would give much wider CIs.
+
+### Honest verdict after 3×3
+
+- **Only k=4 at h=20 is a clean (if marginal) headline:** QRC 0.986 is
+  predictive (just under 1), BOTH classical baselines fail (1.96), and the
+  gap is large. But QRC=0.986 is barely sub-1.0 — not a comfortable margin.
+- **k=6 does NOT survive.** QRC=1.172 > 1.0 → worse than the trivial mean
+  predictor. The "QRC beats shadows" bootstrap is real but it is the
+  least-bad-among-failures trap (exactly what we warned about). k=6 looked
+  good ONLY on seed 42.
+- **k=2, k=8 are not headlines** (QRC >1 or shadows win).
+
+This substantially weakens the QTML story relative to the 1-seed handoff. The
+defensible claim now is narrow: *at h=20, k=4, a scrambling QRC is (marginally)
+predictive of a 4-body trajectory observable where shot-budget-matched
+classical shadow and exact-feature reservoirs both fail.* Whether this single
+marginal cell is enough for a QTML abstract is a judgment call — see options
+in the roadmap.
+
+## Still outstanding before any QTML claim
+
+1. **Decide if k=4-only is enough.** It is one marginal cell. Options:
+   (a) push the regime to widen the win (tau sweep, longer trajectory for
+   lower-variance estimates, different target observable family); (b) reframe
+   honestly as "a narrow but real advantage zone exists"; (c) shelve the QTML
+   abstract.
+2. **Seed-level bootstrap** (resample whole seeds) for honest CIs.
+3. **Tau sweep at k=4 and k=6** — does a different tau make k=6 genuinely
+   predictive (<1) across all 3 seeds, or push k=4 to a safer margin?
+4. **Understand the k=8 break** (likely tau=0.6 scrambling doesn't reach
+   8-body support).
 
 ## QTML logistics
 

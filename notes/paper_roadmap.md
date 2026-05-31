@@ -53,19 +53,23 @@ split 3 ways) — without it QRC is blind to X/Y targets; (2) scrambling reservo
 (peaks k=4–6, breaks at k=8); short horizons favor classical. Claim = long-horizon
 forecasting of intermediate-body observables only.
 
-**CONFIRMED 3×3 (2026-05-31, `scripts/diag_highbody_targetseeds.py`,
+**3×3 RESULT (2026-05-31, `scripts/diag_highbody_targetseeds.py`,
 `results/paper6_highbody_3x3/`):** 3 target × 3 reservoir seeds = 9 runs.
-Headline cells at h=20 — QRC predictive (<1), both classical fail (>1):
-- k=4: QRC 0.730±.10 vs Shadows 1.706±.28; bootstrap gap +0.974 [+0.732,+1.232]
-- k=6: QRC 0.812±.07 vs Shadows 1.228±.12; bootstrap gap +0.413 [+0.314,+0.522]
-Both bootstrap 95% CIs exclude zero (P(QRC better)=1.000). k=8 breaks
-(classical wins); k=2 QRC "wins" but is itself >1 (not a clean headline).
+⚠️ The 1-seed numbers did NOT survive the 3-target-seed test. h=20:
+- k=4: QRC **0.986±.24** vs Shadows 1.965±.59 — predictive but MARGINAL (clean headline)
+- k=6: QRC 1.172±.44 vs Shadows 1.809±.97 — QRC >1, NOT predictive (fails)
+- k=2: QRC 1.339 (>1); k=8: shadows win.
+Pooled bootstrap gaps are significant (k=4 +0.927, k=6 +0.321) but at k=6 QRC
+is itself >1 = least-bad-among-failures. **Only k=4/h=20 is a clean (marginal)
+win.** Full honesty writeup in `notes/paper6_highbody_findings.md`.
 
 **Paper 6 outstanding work (before QTML abstract, deadline 30 Jun 2026):**
-- ✅ 3 target seeds {42,7,123} for the 3×3 standing rule — DONE
-- ✅ Bootstrap CIs on the k=4,6 / h=20 cells — DONE, both significant
-- Understand/push the k=8 break (τ sweep at high body count) — IN PROGRESS
-- Write the abstract (`notes/qtml2026_abstract_draft.md`, numbers filled);
+- ✅ 3 target seeds {42,7,123} for the 3×3 standing rule — DONE (weakened result)
+- ✅ Pooled bootstrap CIs — DONE (but need seed-level bootstrap for honesty)
+- ⚠️ **Decide:** is one marginal cell (k=4/h=20) enough for QTML, or push the
+  regime (τ sweep, longer trajectory, different target family) to widen the win?
+- Understand the k=8 break (τ sweep at high body count)
+- Write the abstract (`notes/qtml2026_abstract_draft.md` — narrowed to k=4);
   cite arXiv:2604.23743 for the architecture (do not re-derive)
 - Venue: QTML 2026 abstract (non-archival, no QST conflict)
 

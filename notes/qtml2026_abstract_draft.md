@@ -3,8 +3,11 @@
 **Venue:** QTML 2026, Stellenbosch, South Africa, Dec 6–11.
 **Deadline:** 30 June 2026. Abstract-based, non-archival (no QST conflict).
 **Architecture citation:** arXiv:2604.23743 (cite, do not re-derive).
-**Status:** Numbers CONFIRMED at 3×3 (3 target × 3 reservoir seeds) +
-bootstrap CIs. Source: `results/paper6_highbody_3x3/summary.json`.
+**Status:** ⚠️ NEEDS REVISION. The 3×3 run (`results/paper6_highbody_3x3/`)
+weakened the story: only k=4/h=20 survives as a (marginal) headline; k=6 does
+NOT (QRC>1.0 across seeds 7,123). Numbers below are the REAL 3×3 values. The
+abstract prose must be narrowed to the single k=4 cell or the regime pushed
+further before submission. See `notes/paper6_highbody_findings.md`.
 
 ---
 
@@ -34,29 +37,31 @@ observable O = U†Z_iU onto a *local* Z probe, so its shot variance scales as
 ~1/M independent of body count, while a classical shadow estimator of the same
 k-body target pays variance 3^k/M.
 
-At horizon h=20, the QRC predicts intermediate-body targets (k=4–6) with
-NRMSE < 1 (predictive), whereas both classical shadow-based and exact-feature
-reservoirs exceed NRMSE 1 (worse than the mean predictor). At k=6, h=20: QRC
-NRMSE = 0.81 ± 0.07 vs shadows 1.23 ± 0.12; at k=4, h=20: QRC 0.73 ± 0.10 vs
-shadows 1.71 ± 0.28. Paired bootstrap 95% CIs on the Shadows−QRC gap exclude
-zero in both cells (k=4: [+0.73, +1.23]; k=6: [+0.31, +0.52]; P(QRC better)=1.0).
-The advantage is specific: it is absent at short horizons and breaks at
-near-global body count (k=8), so the claim is precisely long-horizon
-forecasting of intermediate-body observables. We confirm robustness across 3
-target Hamiltonians × 3 reservoir instances (9 runs).
+At horizon h=20 for a 4-body target (k=4), the QRC is predictive
+(NRMSE = 0.99 ± 0.24, just under the trivial-mean threshold of 1) whereas both
+classical shadow-based (1.97 ± 0.59) and exact-feature (1.96 ± 0.61) reservoirs
+fail (NRMSE > 1). The advantage is specific: it is absent at short horizons
+(at k=4, classical shadows win at h=1), it is marginal even where present, and
+it does NOT extend to k=6 (QRC 1.17 > 1, also failed) or k=8 (shadows win)
+across 3 target Hamiltonians. The defensible claim is therefore narrow:
+*there exists a long-horizon, intermediate-body regime (here k=4, h=20) where
+a shot-budget-matched QRC is predictive and classical reservoirs are not.*
+[NOTE: a single marginal cell may be too thin for QTML — push the regime first.]
 
-## Key numbers (CONFIRMED 3×3, mean ± std over 9 runs)
+## Key numbers (REAL 3×3, mean ± std over 9 runs, h=20)
 
-| body k | h=20 QRC | h=20 Shadows | h=20 Cheat | bootstrap 95% CI on Shadows−QRC gap |
-| ------ | ------------ | ------------ | ------------ | ----------------------------------- |
-| 2      | 1.156 ± 0.10 | 2.211 ± 0.36 | 2.226 ± 0.36 | (QRC "wins" but NOT predictive, >1.0)|
-| 4      | **0.730 ± 0.10** | 1.706 ± 0.28 | 1.703 ± 0.27 | +0.974 [+0.732, +1.232], P=1.000   |
-| 6      | **0.812 ± 0.07** | 1.228 ± 0.12 | 1.156 ± 0.16 | +0.413 [+0.314, +0.522], P=1.000   |
-| 8      | 1.063 ± 0.10 | 0.918 ± 0.08 | 0.872 ± 0.08 | (break — classical wins)            |
+| body k | h=20 QRC | h=20 Shadows | h=20 Cheat | bootstrap CI (pooled, gap) | clean headline? |
+| ------ | ------------ | ------------ | ------------ | -------------------------- | --------------- |
+| 2      | 1.339 ± 0.20 | 1.987 ± 0.43 | 1.974 ± 0.42 | —                          | NO (QRC >1)     |
+| 4      | **0.986 ± 0.24** | 1.965 ± 0.59 | 1.959 ± 0.61 | +0.927 [+0.889, +0.967]    | YES (marginal)  |
+| 6      | 1.172 ± 0.44 | 1.809 ± 0.97 | 1.739 ± 0.94 | +0.321 [+0.290, +0.351]    | NO (QRC >1)     |
+| 8      | 1.278 ± 0.26 | 1.054 ± 0.08 | 1.006 ± 0.14 | —                          | NO (shadows win)|
 
-Headline cells = k=4 and k=6 at h=20: QRC predictive (<1.0), BOTH classical
-baselines failed (>1.0), bootstrap CI on the gap excludes zero. Short horizons
-(h=1,5) favor classical (esp. exact-feature Cheat). Full table with h=1,5 in
+⚠️ Only k=4 has QRC < 1.0 (predictive) AND both classical > 1.0 (failed). At
+k=6 the bootstrap gap is positive/significant but QRC itself is 1.17 > 1 —
+least-bad-among-failures, not a real win. Bootstrap CIs pool test residuals
+(within-sample noise); the across-seed std (±0.24, ±0.44) is the honest
+Hamiltonian-level uncertainty. Full table incl. h=1,5 in
 `results/paper6_highbody_3x3/summary.json`.
 
 ## Honesty caveats to keep in the abstract / talk
