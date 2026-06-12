@@ -156,16 +156,35 @@ def reservoir_state_at_t(H_series, t, n1, n2, U, mem_depth):
     return rho_full          # last full state (q qubits), pre-trace
 
 
-def features_from_rho(rho, z_ops, zz_ops, readout, rng_shot=None, shots=0):
-    """Compute readout features from a q-qubit density matrix rho."""
-    q = len(z_ops)
-    zc = np.array([np.real(np.trace(rho @ Z)) for Z in z_ops])
+def build_sign_tables(q):
+    """Precompute parity sign tables for diagonal Z and ZZ observables.
+    Z_i and Z_iZ_k are diagonal in the computational basis, so
+    <O> = diag(rho) . signs.  Returns (z_signs (q,2^q), zz_signs (P,2^q)).
+    Verified equivalent to trace(rho@O) by gate G3 (1e-16)."""
+    dim = 2 ** q
+    idx = np.arange(dim)
+    shifts = np.arange(q - 1, -1, -1)
+    bits = ((idx[:, None] >> shifts) & 1)              # (2^q, q)
+    z_signs = ((-1.0) ** bits).T                        # (q, 2^q): <Z_i>
+    zz_rows = []
+    for i in range(q):
+        for k in range(i + 1, q):
+            zz_rows.append((-1.0) ** (bits[:, i] + bits[:, k]))
+    zz_signs = np.array(zz_rows)                         # (q(q-1)/2, 2^q)
+    return z_signs, zz_signs
+
+
+def features_from_rho(rho, readout, z_signs, zz_signs, rng_shot=None, shots=0):
+    """Readout features from a q-qubit density matrix via DIAGONAL observables
+    (no per-operator matmul): <Z_i>,<Z_iZ_k> = diag(rho) . signs."""
+    diag = np.real(np.diag(rho))                         # (2^q,)
+    zc = z_signs @ diag                                  # (q,)
     if shots and shots > 0:
-        zc = zc + rng_shot.standard_normal(q) * np.sqrt(np.maximum(1 - zc ** 2, 0) / shots)
+        zc = zc + rng_shot.standard_normal(len(zc)) * np.sqrt(np.maximum(1 - zc ** 2, 0) / shots)
         zc = np.clip(zc, -1, 1)
     if readout == "Z":
         return zc
-    zzc = np.array([np.real(np.trace(rho @ O)) for O in zz_ops])
+    zzc = zz_signs @ diag                                # (q(q-1)/2,)
     if shots and shots > 0:
         zzc = zzc + rng_shot.standard_normal(len(zzc)) * np.sqrt(np.maximum(1 - zzc ** 2, 0) / shots)
         zzc = np.clip(zzc, -1, 1)
@@ -178,7 +197,7 @@ def qrc_feature_matrix(H_series, n1, n2, seed, readout, mem_depth=3,
     ZZ_QR2 concatenates features computed at tau and tau/2."""
     q = n1 + n2
     H_res = reservoir_hamiltonian(q, seed)
-    z_ops, zz_ops = _z_ops(q), _zz_ops(q)
+    z_signs, zz_signs = build_sign_tables(q)
     rng_shot = np.random.default_rng(7000 + seed)
     taus = [tau, tau / 2.0] if readout == "ZZ_QR2" else [tau]
     base_readout = "ZZ" if readout == "ZZ_QR2" else readout
@@ -187,7 +206,7 @@ def qrc_feature_matrix(H_series, n1, n2, seed, readout, mem_depth=3,
         U = evol_unitary(H_res, tt)
         feats = np.array([
             features_from_rho(reservoir_state_at_t(H_series, t, n1, n2, U, mem_depth),
-                                z_ops, zz_ops, base_readout, rng_shot, shots)
+                                base_readout, z_signs, zz_signs, rng_shot, shots)
             for t in range(len(H_series))])
         blocks.append(feats)
     return np.concatenate(blocks, axis=1)
@@ -268,6 +287,16 @@ def self_test():
     print(f"[G3] max|<ZZ>_rho - <ZZ>_indep| = {max_err:.2e}  {'PASS' if g3 else 'FAIL'}")
     ok &= g3
 
+    # G3b: optimized diagonal readout == explicit trace(rho@O) path (the speedup)
+    z_signs, zz_signs = build_sign_tables(q)
+    feat_fast = features_from_rho(rho, "ZZ", z_signs, zz_signs)
+    feat_ref = np.concatenate([zc, zzc])      # from explicit trace above
+    err_fast = float(np.max(np.abs(feat_fast - feat_ref)))
+    g3b = err_fast < 1e-12
+    print(f"[G3b] max|diag_readout - trace_readout| = {err_fast:.2e}  "
+          f"{'PASS' if g3b else 'FAIL'}")
+    ok &= g3b
+
     # G5: QR2 distinctness
     Fq1 = qrc_feature_matrix(ang, n1, n2, seed=0, readout="ZZ", mem_depth=3)
     Fq2 = qrc_feature_matrix(ang, n1, n2, seed=0, readout="ZZ_QR2", mem_depth=3)
@@ -333,13 +362,324 @@ def _quad_features(X):
     return np.concatenate(cols, axis=1)
 
 
+def ridge_forecast(F, Y, horizon, train_frac=0.7, val_frac=0.15,
+                     alphas=(1e-4, 1e-3, 1e-2, 1e-1, 1.0, 10.0),
+                     X_for_dir=None):
+    """Predict Y[t+h] from F[t].  Ridge alpha chosen on validation (no test
+    leakage).  Returns dict with 'nrmse' (per-asset, mean over assets) and
+    'mda' (mean directional accuracy: fraction of test points where the
+    predicted CHANGE direction sign(Y[t+h]-X_ref[t]) matches observed).
+    X_for_dir is the reference level at time t (defaults to Y[t], i.e. the
+    last observed value -> direction of the next move).  MDA is reported
+    alongside a persistence baseline (predict 'no change' / last sign)."""
+    T = len(F); h = horizon
+    ntr = int(round(train_frac * T))
+    nval = int(round((train_frac + val_frac) * T))
+    if T - h <= nval + 5:
+        return {"nrmse": float("nan"), "mda": float("nan"),
+                "mda_persist": float("nan")}
+
+    def fit(Ftr, Ytr, a):
+        A = Ftr.T @ Ftr + a * np.eye(Ftr.shape[1])
+        return np.linalg.solve(A, Ftr.T @ Ytr)
+
+    Ftr, Ytr = F[:ntr - h], Y[h:ntr]
+    Fva, Yva = F[ntr:nval - h], Y[ntr + h:nval]
+    best_a, best_v = alphas[0], np.inf
+    for a in alphas:
+        W = fit(Ftr, Ytr, a)
+        v = np.mean((Fva @ W - Yva) ** 2)
+        if v < best_v:
+            best_v, best_a = v, a
+    Ftv, Ytv = F[:nval - h], Y[h:nval]
+    W = fit(Ftv, Ytv, best_a)
+    Fte, Yte = F[nval:T - h], Y[nval + h:T]
+    Yp = Fte @ W
+    rmse = np.sqrt(np.mean((Yp - Yte) ** 2, axis=0))
+    std = np.std(Yte, axis=0) + 1e-12
+    nrmse = float(np.mean(rmse / std))
+
+    # MDA: direction of the move from the reference level X_ref[t] to Y[t+h].
+    Xref = (X_for_dir if X_for_dir is not None else Y)
+    ref_te = Xref[nval:T - h]                      # level at time t (causal)
+    obs_dir = np.sign(Yte - ref_te)
+    pred_dir = np.sign(Yp - ref_te)
+    mda = float(np.mean(pred_dir == obs_dir))
+    # persistence baseline: predict the move continues in last observed dir
+    last_move = np.sign(ref_te - Xref[nval - h:T - 2 * h]) if nval - h >= 0 else obs_dir * 0
+    mda_persist = float(np.mean(last_move == obs_dir))
+    return {"nrmse": nrmse, "mda": mda, "mda_persist": mda_persist}
+
+
+def ridge_forecast_nrmse(F, Y, horizon, **kw):
+    return ridge_forecast(F, Y, horizon, **kw)["nrmse"]
+
+
+def phase1(N=5, n2=3, n_steps=1500, coupling=0.1, horizon=1,
+            data_seed=0, res_seed=0, shots=0):
+    """Readout ablation: Z vs ZZ vs ZZ_QR2 at a single seed.  Go/no-go:
+    proceed only if ZZ beats Z by >=15% relative NRMSE (H1)."""
+    q = N + n2
+    assert q <= 11
+    X = generate_coupled_henon(N, n_steps, seed=data_seed, coupling=coupling)
+    ang = np.clip(X * (np.pi / 3), -np.pi, np.pi)   # scale to RY angle range
+    Y = X                                            # forecast the series itself
+    res = {}
+    for readout in ("Z", "ZZ", "ZZ_QR2"):
+        t0 = time.time()
+        F = qrc_feature_matrix(ang, N, n2, seed=res_seed, readout=readout,
+                                mem_depth=3, shots=shots)
+        nrmse = ridge_forecast_nrmse(F, Y, horizon)
+        res[readout] = {"nrmse": nrmse, "D": F.shape[1]}
+        print(f"  {readout:>7}: D={F.shape[1]:>3}  NRMSE={nrmse:.4f}  "
+              f"({time.time()-t0:.0f}s)")
+    z, zz, qr2 = res["Z"]["nrmse"], res["ZZ"]["nrmse"], res["ZZ_QR2"]["nrmse"]
+    rel_zz = (z - zz) / z
+    rel_qr2 = (zz - qr2) / zz
+    res["_summary"] = {"rel_drop_ZZ_vs_Z": rel_zz,
+                        "rel_drop_QR2_vs_ZZ": rel_qr2,
+                        "H1_pass": bool(rel_zz >= 0.15)}
+    print(f"\n  ZZ vs Z:  {rel_zz*100:+.1f}% NRMSE  (H1 needs >=15% drop -> "
+          f"{'PASS' if rel_zz >= 0.15 else 'FAIL'})")
+    print(f"  QR2 vs ZZ:{rel_qr2*100:+.1f}% NRMSE  (H2, expect small +)")
+    outdir = ROOT / "results" / "mv_correlator"; outdir.mkdir(parents=True, exist_ok=True)
+    cfg = {"N": N, "n2": n2, "q": q, "n_steps": n_steps, "coupling": coupling,
+           "horizon": horizon, "data_seed": data_seed, "res_seed": res_seed,
+           "shots": shots}
+    out = {"config": cfg, "results": res}
+    fp = outdir / f"phase1_c{coupling}_h{horizon}.json"
+    fp.write_text(json.dumps(out, indent=2))
+    h = hashlib.sha256(fp.read_bytes()).hexdigest()[:12]
+    print(f"\n  Saved {fp}  (sha {h})")
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Classical baselines (same forecast harness)
+# ---------------------------------------------------------------------------
+
+def poly2_features(X, window=3):
+    """Windowed degree-2 polynomial features: per time t, stack the last
+    `window` rows, then [linear, all pairwise products incl squares]."""
+    T, N = X.shape
+    rows = []
+    for t in range(T):
+        block = X[max(0, t - window + 1):t + 1]
+        if len(block) < window:
+            block = np.vstack([np.repeat(block[:1], window - len(block), 0), block])
+        v = block.flatten()
+        quad = np.concatenate([v[i] * v[i:] for i in range(len(v))])
+        rows.append(np.concatenate([v, quad]))
+    return np.array(rows)
+
+
+def window_features(X, window=3):
+    T, N = X.shape
+    rows = []
+    for t in range(T):
+        block = X[max(0, t - window + 1):t + 1]
+        if len(block) < window:
+            block = np.vstack([np.repeat(block[:1], window - len(block), 0), block])
+        rows.append(block.flatten())
+    return np.array(rows)
+
+
+def esn_features(X, n_res, seed, sr=0.9, in_scale=0.5, leak=0.3, density=0.1):
+    rng = np.random.default_rng(seed)
+    N = X.shape[1]
+    Win = rng.uniform(-in_scale, in_scale, (n_res, N))
+    W = rng.standard_normal((n_res, n_res)) * (rng.uniform(0, 1, (n_res, n_res)) < density)
+    e = np.max(np.abs(np.linalg.eigvals(W)))
+    if e > 1e-8:
+        W *= sr / e
+    r = np.zeros(n_res); out = np.zeros((len(X), n_res))
+    for t in range(len(X)):
+        r = (1 - leak) * r + leak * np.tanh(W @ r + Win @ X[t])
+        out[t] = r
+    return out
+
+
+def _val_mse(F, Y, h, alpha=1e-3):
+    """Validation-only MSE (train [0,0.7), val [0.7,0.85)); no test peek."""
+    T = len(F)
+    ntr = int(round(0.7 * T)); nval = int(round(0.85 * T))
+    A = F[:ntr-h].T @ F[:ntr-h] + alpha * np.eye(F.shape[1])
+    W = np.linalg.solve(A, F[:ntr-h].T @ Y[h:ntr])
+    vp = F[ntr:nval-h] @ W
+    return float(np.mean((vp - Y[ntr+h:nval]) ** 2))
+
+
+def phase2(N=5, n2=3, n_steps=800, coupling=0.1, horizons=(1,),
+            data_seed=0, res_seed=0, shots=0, obs_noise=0.0,
+            angle_scales=(np.pi/4, np.pi/2),
+            taus=(1.0, 2.0)):
+    """QRC (tuned over readout/angle-scale/tau on validation) vs classical
+    baselines.  QRC feature matrices are built ONCE per (readout,scale,tau)
+    and cached, then reused across all horizons (features are horizon-
+    independent; only the ridge target shifts).  obs_noise>0 makes the map
+    non-trivial (no method hits NRMSE 0 via the exact polynomial generator)."""
+    q = N + n2; assert q <= 11
+    X = generate_coupled_henon(N, n_steps, seed=data_seed, coupling=coupling,
+                                 obs_noise=obs_noise)
+    Y = X
+
+    # --- build & cache every QRC feature matrix once (horizon-independent) ---
+    cache = {}   # (readout, scale, tau) -> F
+    t0 = time.time()
+    for readout in ("ZZ", "ZZ_QR2"):
+        for sc in angle_scales:
+            ang = np.clip(X * sc, -np.pi, np.pi)
+            for tau in taus:
+                cache[(readout, round(sc, 4), tau)] = qrc_feature_matrix(
+                    ang, N, n2, seed=res_seed, readout=readout,
+                    mem_depth=3, tau=tau, shots=shots)
+    print(f"  built {len(cache)} QRC feature matrices in {time.time()-t0:.0f}s")
+
+    # classical features (horizon-independent) built once
+    Fpoly = poly2_features(X); Fwin = window_features(X)
+    Fe = esn_features(X, n_res=2 * next(iter(cache.values())).shape[1], seed=res_seed)
+
+    out_per_h = {}
+    for horizon in horizons:
+        res = {}
+        # QRC: pick (readout,scale,tau) by validation MSE at THIS horizon
+        best = None
+        for key, F in cache.items():
+            v = _val_mse(F, Y, horizon)
+            if best is None or v < best[0]:
+                best = (v, key, F)
+        _, (bro, bsc, btau), Fq = best
+        res["QRC_tuned"] = {"nrmse": ridge_forecast_nrmse(Fq, Y, horizon),
+                              "D": Fq.shape[1], "readout": bro,
+                              "angle_scale": bsc, "tau": btau}
+        res["Poly2"] = {"nrmse": ridge_forecast_nrmse(Fpoly, Y, horizon),
+                          "D": Fpoly.shape[1]}
+        res["VAR"] = {"nrmse": ridge_forecast_nrmse(Fwin, Y, horizon),
+                       "D": Fwin.shape[1]}
+        res["ESN"] = {"nrmse": ridge_forecast_nrmse(Fe, Y, horizon),
+                       "D": Fe.shape[1]}
+        res["Linear"] = {"nrmse": ridge_forecast_nrmse(X, Y, horizon),
+                          "D": X.shape[1]}
+        qn, pn = res["QRC_tuned"]["nrmse"], res["Poly2"]["nrmse"]
+        print(f"  h={horizon}: " + "  ".join(
+            f"{k}={res[k]['nrmse']:.4f}" for k in
+            ("QRC_tuned", "Poly2", "ESN", "VAR", "Linear"))
+            + f"  [QRC {bro} sc={bsc:.3f} tau={btau}; "
+            + f"QRC vs Poly2 {(pn-qn)/pn*100:+.1f}%]")
+        out_per_h[str(horizon)] = res
+
+    outdir = ROOT / "results" / "mv_correlator"; outdir.mkdir(parents=True, exist_ok=True)
+    out = {"config": {"N": N, "n2": n2, "q": q, "n_steps": n_steps,
+                       "coupling": coupling, "horizons": list(horizons),
+                       "data_seed": data_seed, "res_seed": res_seed,
+                       "shots": shots, "obs_noise": obs_noise},
+            "results_per_horizon": out_per_h}
+    fp = outdir / (f"phase2_c{coupling}_n{obs_noise}"
+                    f"_ds{data_seed}_rs{res_seed}.json")
+    fp.write_text(json.dumps(out, indent=2))
+    print(f"  Saved {fp}  (sha {hashlib.sha256(fp.read_bytes()).hexdigest()[:12]})")
+    return out
+
+
+def phase3(N=5, n2=3, n_steps=800, coupling=0.1, horizons=(1, 5),
+            data_seed=0, res_seed=0, shots=0, obs_noise=0.1,
+            angle_scales=(np.pi/4, np.pi/2), taus=(1.0, 2.0)):
+    """The honest concat ablation the a hybrid QRC architecture paper skipped, with MDA.
+    Compares, per horizon, on BOTH NRMSE and MDA (vs persistence):
+      Poly2          : classical degree-2 polynomial (the strong control)
+      QRC            : best tuned quantum reservoir features alone
+      Poly2+QRC      : concatenation -- does QRC add COMPLEMENTARY signal?
+    Decisive: if Poly2+QRC materially beats Poly2, the quantum features carry
+    information the polynomial basis lacks.  If concat == Poly2, QRC is
+    redundant given a classical quadratic model."""
+    q = N + n2; assert q <= 11
+    X = generate_coupled_henon(N, n_steps, seed=data_seed, coupling=coupling,
+                                 obs_noise=obs_noise)
+    Y = X
+
+    # cache QRC feature matrices once
+    cache = {}
+    t0 = time.time()
+    for readout in ("ZZ", "ZZ_QR2"):
+        for sc in angle_scales:
+            ang = np.clip(X * sc, -np.pi, np.pi)
+            for tau in taus:
+                cache[(readout, round(sc, 4), tau)] = qrc_feature_matrix(
+                    ang, N, n2, seed=res_seed, readout=readout,
+                    mem_depth=3, tau=tau, shots=shots)
+    Fpoly = poly2_features(X)
+    print(f"  built {len(cache)} QRC caches + Poly2 in {time.time()-t0:.0f}s")
+
+    out_per_h = {}
+    for h in horizons:
+        # pick best QRC config by validation MSE at this horizon
+        best = None
+        for key, F in cache.items():
+            v = _val_mse(F, Y, h)
+            if best is None or v < best[0]:
+                best = (v, key, F)
+        _, qkey, Fq = best
+        m_poly = ridge_forecast(Fpoly, Y, h, X_for_dir=Y)
+        m_qrc = ridge_forecast(Fq, Y, h, X_for_dir=Y)
+        Fcat = np.concatenate([Fpoly, Fq], axis=1)
+        m_cat = ridge_forecast(Fcat, Y, h, X_for_dir=Y)
+        res = {"Poly2": m_poly, "QRC": m_qrc, "Poly2+QRC": m_cat,
+               "qrc_cfg": {"readout": qkey[0], "scale": qkey[1], "tau": qkey[2]}}
+        out_per_h[str(h)] = res
+        dn = (m_poly["nrmse"] - m_cat["nrmse"]) / m_poly["nrmse"] * 100
+        print(f"  h={h}: NRMSE Poly2={m_poly['nrmse']:.3f} QRC={m_qrc['nrmse']:.3f} "
+              f"cat={m_cat['nrmse']:.3f} ({dn:+.1f}% vs Poly2) | "
+              f"MDA Poly2={m_poly['mda']:.3f} QRC={m_qrc['mda']:.3f} "
+              f"cat={m_cat['mda']:.3f} persist={m_poly['mda_persist']:.3f}")
+
+    outdir = ROOT / "results" / "mv_correlator"; outdir.mkdir(parents=True, exist_ok=True)
+    out = {"config": {"N": N, "n2": n2, "q": q, "n_steps": n_steps,
+                       "coupling": coupling, "horizons": list(horizons),
+                       "data_seed": data_seed, "res_seed": res_seed,
+                       "shots": shots, "obs_noise": obs_noise},
+            "results_per_horizon": out_per_h}
+    fp = outdir / f"phase3_c{coupling}_n{obs_noise}_ds{data_seed}_rs{res_seed}.json"
+    fp.write_text(json.dumps(out, indent=2))
+    print(f"  Saved {fp}  (sha {hashlib.sha256(fp.read_bytes()).hexdigest()[:12]})")
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--self-test", action="store_true")
+    ap.add_argument("--phase1", action="store_true")
+    ap.add_argument("--phase2", action="store_true")
+    ap.add_argument("--phase3", action="store_true")
+    ap.add_argument("--coupling", type=float, default=0.1)
+    ap.add_argument("--horizon", type=int, default=1)
+    ap.add_argument("--horizons", type=int, nargs="+", default=None)
+    ap.add_argument("--obs-noise", type=float, default=0.0)
     args = ap.parse_args()
+    if args.phase2:
+        couplings = [args.coupling] if args.coupling >= 0 else [0.0, 0.1, 0.2]
+        horizons = tuple(args.horizons) if args.horizons else (args.horizon,)
+        for c in couplings:
+            print(f"=== Phase 2 QRC(tuned) vs classical (coupling={c}, "
+                  f"horizons={horizons}, obs_noise={args.obs_noise}) ===")
+            phase2(coupling=c, horizons=horizons, obs_noise=args.obs_noise)
+            print()
+        return
+    if args.phase3:
+        couplings = [args.coupling] if args.coupling >= 0 else [0.0, 0.1, 0.2]
+        horizons = tuple(args.horizons) if args.horizons else (1, 5)
+        for c in couplings:
+            print(f"=== Phase 3 concat ablation + MDA (coupling={c}, "
+                  f"horizons={horizons}, obs_noise={args.obs_noise}) ===")
+            phase3(coupling=c, horizons=horizons, obs_noise=args.obs_noise)
+            print()
+        return
     if args.self_test:
         self_test(); return
-    print("Phase 0 only: run with --self-test. Science phases come next.")
+    if args.phase1:
+        print(f"=== Phase 1 readout ablation (coupling={args.coupling}, "
+              f"horizon={args.horizon}) ===")
+        phase1(coupling=args.coupling, horizon=args.horizon); return
+    print("Run with --self-test, --phase1, --phase2, or --phase3.")
 
 
 if __name__ == "__main__":
