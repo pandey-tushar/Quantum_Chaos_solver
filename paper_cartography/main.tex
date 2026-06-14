@@ -1,0 +1,351 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage[margin=1in]{geometry}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    citecolor=blue,
+    urlcolor=blue
+}
+
+\newcommand{\nrmse}{\mathrm{NRMSE}}
+
+\title{When Fair Baselines Erase the Quantum Edge:\\
+A Matched-Capacity Study of Quantum Reservoir Computing\\
+at NISQ Scale}
+
+\author{
+    Tushar Pandey\\
+    \textit{Texas A\&M University}\\
+    \texttt{tusharp@tamu.edu}
+}
+
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+Quantum reservoir computing (QRC) is widely reported to outperform classical
+methods on time-series tasks, but many such comparisons rely on classical
+baselines that are under-tuned, mismatched in capacity, or compared on a metric
+that flatters the quantum model. We revisit two representative QRC advantage
+mechanisms under deliberately fair conditions at noisy intermediate-scale
+quantum (NISQ) sizes ($q\le 11$, statevector simulation): (i) a two-point
+correlator readout applied to genuinely quadratic multivariate dynamics, and
+(ii) feedback-driven QRC on nonstationary regime-switching signals. For each we
+introduce the control the QRC literature typically omits: a
+\emph{capacity-matched} classical model (a degree-2 polynomial whose feature set
+spans the same quadratic interactions the correlator readout exposes) in case
+(i), and a \emph{tuning-matched} classical recurrent network (an echo-state
+network optimised with the identical validation budget) in case (ii). Across
+both, the quantum reservoir's apparent advantage disappears once the comparison
+is fair: the correlator QRC carries no information beyond the polynomial basis
+(concatenation improves it by at most $3.9\%$, consistent with mild
+regularisation), and feedback QRC---although a genuinely live mechanism that
+lifts a useless open-loop reservoir to predictive performance---still trails a
+same-budget echo-state network by $14\%$ in normalised error. We argue that the
+methodological controls, not the negative outcomes, are the contribution: they
+provide a reusable template for honest QRC benchmarking and a bounded, evidence-
+backed map of where the quantum reservoir does not help at currently simulable
+scales. All results are deterministic and reproduce bit-for-bit.
+\end{abstract}
+
+\section{Introduction}
+
+Reservoir computing trains only a linear readout on top of a fixed nonlinear
+dynamical system, which makes it an attractive near-term application of quantum
+hardware: a fixed quantum reservoir avoids the trainability pathologies of
+variational circuits while supplying a high-dimensional nonlinear feature map.
+A growing body of work reports that quantum reservoir computing (QRC)
+outperforms classical reservoirs and recurrent networks on chaotic, financial,
+and biomedical time series.
+
+A recurring weakness in these reports is the classical baseline. When a quantum
+model is compared against an echo-state network (ESN) or a polynomial readout,
+the strength of the conclusion depends entirely on whether the classical model
+was given an equal chance: the same feature-space capacity, the same
+hyperparameter-tuning budget, the same causal evaluation protocol, and a metric
+that does not implicitly favour the quantum side. In practice these conditions
+are often not met. Baselines are reported with default settings while the
+quantum model is tuned; ``classical reservoir'' refers to a different
+architecture than the quantum one; efficiency is measured as simulation
+wall-clock time rather than any hardware-relevant quantity; and directional
+accuracy is reported without the persistence control that makes it meaningful.
+
+This paper asks a deliberately narrow question: \emph{when the classical
+baseline is matched in capacity and tuning, does the quantum reservoir's
+reported advantage survive?} We study two representative advantage mechanisms at
+NISQ scale and find that it does not. Our contribution is not the negative
+outcome per se but the two controls that produce it---a capacity-matched
+classical model and a tuning-matched classical recurrent network---together with
+a correctness-gated, deterministic simulation harness. We state the scope
+plainly: this is a simulation study at sizes that classical hardware can
+represent exactly ($q \le 11$); the claim is ``no advantage here, under fair
+comparison,'' not ``no advantage is possible.''
+
+\section{Methods}
+\label{sec:methods}
+
+\subsection{Common harness and fairness controls}
+
+All experiments share a single evaluation harness with the following
+properties, several of which are the fairness controls whose absence we are
+critiquing.
+
+\paragraph{Causal, leakage-free evaluation.} Each series is split
+chronologically into training, validation, and test segments. Every
+preprocessing step (standardisation) and every hyperparameter is fit on the
+training/validation portion only and applied causally; the test segment is
+touched once, for the final reported number.
+
+\paragraph{Validation-only tuning, applied equally.} All free
+hyperparameters---ridge penalty for every method, quantum evolution time
+$\tau$, feedback gain $k_{\mathrm{fb}}$, and the ESN spectral radius and leak
+rate---are selected by validation error. Crucially, the classical baselines
+receive the \emph{same} tuning budget as the quantum model. This is the single
+most important control and the one most often missing.
+
+\paragraph{Matched feature dimension.} Where a quantum and a classical reservoir
+are compared, their readout feature dimensions are matched so that the
+comparison is not confounded by readout width.
+
+\paragraph{Correctness gates.} Before any result is generated, an automated
+self-test verifies: the reservoir state is physical ($\mathrm{Tr}\,\rho=1$ and
+all measured expectations lie in $[-1,1]$); the two-point readout computed from
+the density-matrix diagonal agrees with the explicit operator expectation to
+machine precision; finite-shot estimates converge to the exact values as the
+shot count grows; and, for the feedback model, that the feedback path is wired
+correctly (with gain zero it reproduces the open-loop reservoir to machine
+precision) and is strictly causal (perturbing a future input leaves earlier
+features unchanged). Every reported number is read back from disk and checked
+against a content hash; all results in this paper are deterministic and
+reproduce bit-for-bit.
+
+\paragraph{Metrics.} We report normalised root-mean-square error
+($\nrmse$, normalised by the per-target standard deviation, so that
+$\nrmse=1$ is the trivial mean predictor) and, for directional tasks, mean
+directional accuracy (MDA) reported alongside a persistence baseline.
+
+\subsection{Quantum reservoirs}
+
+The quantum reservoir is a fully connected transverse-field Ising system,
+\begin{equation}
+H = \sum_{i<j} J_{ij}\, X_i X_j + v \sum_i Z_i,
+\qquad J_{ij}\sim\mathcal{U}[0,1],\ v=1,
+\end{equation}
+fixed after random initialisation. Classical inputs are angle-encoded via
+single-qubit $R_Y$ rotations; the state evolves for time $\tau$; and the readout
+consists of single-qubit expectations $\langle Z_i\rangle$ and, where indicated,
+two-point correlators $\langle Z_i Z_j\rangle$, which are estimable from the same
+measurement record. A recurrent variant carries memory across timesteps by
+partial-tracing the input qubits between encodings. Because $Z_i$ and $Z_iZ_j$
+are diagonal in the computational basis, all correlators are obtained from the
+state-diagonal in a single contraction, verified equal to the explicit operator
+expectation (Section~\ref{sec:methods}).
+
+\section{Case study I: a correlator readout adds nothing beyond a
+capacity-matched polynomial}
+\label{sec:corr}
+
+\subsection{Setup}
+
+A frequently proposed route to quantum expressivity is to enrich the readout
+with two-point correlators $\langle Z_i Z_j\rangle$, which capture pairwise
+quantum correlations and grow the feature space quadratically. The natural
+question a fair comparison must ask is whether these features carry information
+that an explicit classical quadratic model does not already have.
+
+We test this on a controlled testbed of $N=5$ coupled H\'enon maps---bounded,
+genuinely quadratic, multivariate dynamics with a tunable cross-asset coupling
+$c$. We compare three models on one-step prediction (all with the same windowed
+ridge readout and causal protocol): the tuned correlator QRC ($q=8$, readout
+tuned over $\tau$, encoding scale, and single- vs.\ two-reservoir ensemble); a
+degree-2 polynomial model (\textsc{Poly2}) whose features are all pairwise
+products of the windowed inputs---the \emph{capacity-matched} classical
+control, deliberately given \emph{more} features than the QRC; and the
+concatenation $\textsc{Poly2}\oplus\textsc{QRC}$, which tests directly whether
+the quantum features add anything to the polynomial basis. Observation noise of
+standard deviation $0.1$ is added so that no model can solve the map exactly
+through its generating polynomial. The concatenation ablation---running the
+classical and quantum feature sets together and asking whether the union beats
+the classical part alone---is exactly the control omitted by typical
+hybrid-architecture reports.
+
+\subsection{Results}
+
+Table~\ref{tab:corr} reports the verified numbers. At the one-step horizon the
+\textsc{Poly2} control beats the tuned QRC outright at every coupling (e.g.\
+$\nrmse$ $0.327$ vs.\ $0.713$ at $c=0.1$), and at the strongest coupling the
+tuned QRC degrades past the trivial-mean predictor ($\nrmse=1.45$) while the
+classical models remain predictive. Decisively, concatenating the quantum
+features onto \textsc{Poly2} improves on \textsc{Poly2} alone by between $0.1\%$
+and $3.9\%$---the magnitude expected from a few extra mildly-regularising
+features, not from complementary signal. The same verdict holds on mean
+directional accuracy: \textsc{Poly2} reaches $\mathrm{MDA}\approx 0.96$
+(persistence $\le 0.18$), the quantum model is no better, and the concatenation
+does not exceed \textsc{Poly2}. The coupling axis, which one might expect to
+favour the joint quantum encoding, instead makes the QRC relatively worse.
+
+\begin{table}[t]
+\centering
+\caption{Case study I (one-step, observation noise $0.1$): correlator QRC vs.\
+the capacity-matched \textsc{Poly2} control and their concatenation, on coupled
+H\'enon dynamics at three couplings $c$. Lower $\nrmse$ is better;
+$\nrmse<1$ is predictive. ``cat'' is $\textsc{Poly2}\oplus\textsc{QRC}$.
+All values verified from disk.}
+\label{tab:corr}
+\begin{tabular}{lcccc}
+\toprule
+$c$ & QRC & \textsc{Poly2} & cat & cat vs.\ \textsc{Poly2} \\
+\midrule
+$0.0$ & $0.712$ & $0.353$ & $0.344$ & $+2.4\%$ \\
+$0.1$ & $0.713$ & $0.327$ & $0.323$ & $+1.3\%$ \\
+$0.2$ & $1.450$ & $0.529$ & $0.509$ & $+3.9\%$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The interpretation is unambiguous: on dynamics that are genuinely quadratic---the
+regime most favourable to a two-point correlator readout---the quantum reservoir
+contributes no information that an explicit degree-2 polynomial does not already
+hold. The correlator readout helps the QRC relative to a single-point readout,
+but that gain does not transfer into an advantage over the classical model whose
+capacity it was meant to match.
+
+\section{Case study II: feedback is a live mechanism but loses to a
+tuning-matched ESN}
+\label{sec:fb}
+
+\subsection{Setup}
+
+A distinct advantage claim concerns \emph{feedback-driven} QRC, in which the
+measurement outcome at one step modulates the reservoir drive at the next,
+making the effective dynamics path-dependent rather than a fixed function of a
+finite input window. Path-dependence is something a fixed-window polynomial
+cannot reproduce---but it is precisely what a classical recurrent network also
+provides. The honest baseline for a feedback reservoir is therefore not a
+polynomial but a recurrent network, the echo-state network (ESN), and the test
+is whether \emph{quantum} recurrence beats \emph{classical} recurrence at equal
+tuning.
+
+We use a nonstationary task built so that recurrence is necessary: a hidden
+two-state Markov process switches the sign of a first-order autoregressive
+coefficient, so each regime is individually predictable but the regime must be
+inferred online from the observable history. A correctness gate confirms the
+task genuinely requires regime inference (an oracle given the hidden state beats
+a fixed-window linear model, with the gap growing as the switching rate rises).
+We implement feedback as an additive, saturating term on the input drive angle,
+$\phi_t = x_t + k_{\mathrm{fb}}\tanh(\bar m_{t-1})$, where $\bar m_{t-1}$ is the
+mean measurement at the previous step; $k_{\mathrm{fb}}=0$ recovers the
+open-loop reservoir exactly. We compare, over three data seeds $\times$ three
+reservoir seeds, the tuned feedback QRC, its open-loop counterpart, a
+tuning-matched ESN (spectral radius and leak rate selected on the same
+validation budget), \textsc{Poly2}, and a linear model.
+
+\subsection{Results}
+
+Feedback is a genuine, live mechanism. The open-loop reservoir is useless on
+this task ($\nrmse\approx 1.06$, worse than the mean predictor); closing the
+loop lifts it to predictive performance, an improvement of $10$--$19\%$ across
+switching rates (Table~\ref{tab:fb}, upper). This is, to our knowledge, the
+clearest case in our study of a quantum reservoir mechanism doing something its
+open-loop version cannot.
+
+\begin{table}[t]
+\centering
+\caption{Case study II. Upper: feedback vs.\ open-loop QRC across switching
+rates $p_{\mathrm{sw}}$ (one seed), showing feedback is a live mechanism. Lower:
+the fair test at $p_{\mathrm{sw}}=0.05$ over $3\times3$ seeds, mean $\pm$ s.d.,
+one-step $\nrmse$ and MDA (persistence MDA $=0.24$). The tuning-matched ESN
+wins.}
+\label{tab:fb}
+\begin{tabular}{lccc}
+\toprule
+\multicolumn{4}{l}{\emph{Upper: feedback vs.\ open-loop}}\\
+$p_{\mathrm{sw}}$ & open-loop & feedback & gain \\
+\midrule
+$0.02$ & $1.007$ & $0.874$ & $+13.2\%$ \\
+$0.05$ & $1.018$ & $0.824$ & $+19.1\%$ \\
+$0.10$ & $1.032$ & $0.925$ & $+10.5\%$ \\
+\midrule
+\multicolumn{4}{l}{\emph{Lower: fair comparison, $3\times3$ seeds}}\\
+method & $\nrmse$ & MDA & \\
+\midrule
+ESN (tuned)      & $0.662\pm0.029$ & $0.764\pm0.037$ & \\
+Linear           & $0.692\pm0.018$ & $0.775\pm0.033$ & \\
+\textsc{Poly2}   & $0.729\pm0.036$ & $0.773\pm0.038$ & \\
+Feedback QRC     & $0.756\pm0.072$ & $0.760\pm0.035$ & \\
+Open-loop QRC    & $1.061\pm0.025$ & $0.759\pm0.042$ & \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The mechanism being live, however, does not make it advantageous. Under the fair
+$3\times3$-seed comparison (Table~\ref{tab:fb}, lower), the tuning-matched ESN
+attains $\nrmse = 0.662 \pm 0.029$ against the feedback QRC's
+$0.756 \pm 0.072$---an ESN advantage of $14\%$. The feedback QRC in fact trails
+every classical baseline, including a plain windowed linear model
+($0.692$). On directional accuracy all models cluster near $0.76$, far above the
+$0.24$ persistence floor but indistinguishable across methods. The conclusion is
+that quantum feedback here reconstructs the recurrent memory that a classical
+recurrent network already provides, and does so slightly less efficiently;
+closing the loop rescues the quantum reservoir up to, but not past, the
+classical pack.
+
+\section{Discussion}
+
+Two mechanisms, two representative advantage claims, one outcome: under a
+capacity-matched classical control in the first case and a tuning-matched
+classical recurrent control in the second, the quantum reservoir's reported edge
+does not survive. We emphasise three points.
+
+First, the controls are the contribution. The concatenation ablation
+($\textsc{Poly2}\oplus\textsc{QRC}$ vs.\ \textsc{Poly2}) directly measures
+whether quantum features add information to a classical model of matched
+capacity, and the same-budget ESN measures whether quantum recurrence beats
+classical recurrence on equal footing. These are inexpensive to run and decisive
+in interpretation, yet they are routinely omitted; including them changes the
+conclusion.
+
+Second, ``live'' is not ``advantageous.'' The feedback reservoir genuinely
+transforms a useless open-loop model into a predictive one. A study that
+compared feedback QRC only against open-loop QRC---or against an untuned
+ESN---would have reported a success. The advantage evaporates only against a
+classical recurrent model tuned as hard as the quantum one.
+
+Third, the scope is bounded and we state it as such. These are statevector
+simulations at $q \le 11$, sizes a classical computer represents exactly, on
+tasks with low-dimensional classical inputs. We make no claim about larger
+systems, genuinely quantum-state inputs, or non-Clifford resources, where the
+relevant separations may behave differently. Our claim is the narrow, falsifiable
+one our experiments support: at currently simulable scales, with fair baselines,
+these two QRC advantage mechanisms do not beat their classical counterparts.
+
+\section{Conclusion}
+
+We have shown, under deliberately fair comparison, that two representative
+quantum-reservoir advantage mechanisms---a two-point correlator readout and a
+feedback-driven reservoir---do not outperform capacity- and tuning-matched
+classical baselines at NISQ scale. The methodological template we use, a
+capacity-matched classical control plus a same-budget recurrent control inside a
+correctness-gated, deterministic harness, is a reusable standard for QRC
+benchmarking. We offer the resulting map not as a verdict on quantum reservoir
+computing but as a marker of where, today, the quantum part earns its keep and
+where it does not.
+
+\paragraph{Reproducibility.} All experiments are deterministic; each reported
+value was regenerated from a fresh run and verified bit-for-bit against the
+archived result via content hash. Code and logged results are available from the
+author.
+
+\end{document}
