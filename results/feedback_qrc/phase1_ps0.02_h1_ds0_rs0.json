@@ -1,0 +1,29 @@
+{
+  "config": {
+    "n1": 1,
+    "n2": 4,
+    "q": 5,
+    "n_steps": 1000,
+    "p_switch": 0.02,
+    "horizon": 1,
+    "data_seed": 0,
+    "res_seed": 0,
+    "window": 5
+  },
+  "results": {
+    "open_loop": {
+      "nrmse": 1.0068913519098404,
+      "tau": 1.0
+    },
+    "feedback": {
+      "nrmse": 0.873648550917016,
+      "tau": 2.0,
+      "k_fb": 2.0
+    },
+    "linear": {
+      "nrmse": 0.867534837658885
+    },
+    "rel_fb_vs_open": 0.13233086245114087,
+    "H1_pass": true
+  }
+}

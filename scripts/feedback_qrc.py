@@ -297,13 +297,250 @@ def self_test():
         sys.exit("SELF-TEST FAILED - do not trust results")
 
 
+def ridge_forecast(F, Y, horizon=1, train_frac=0.7, val_frac=0.15,
+                     alphas=(1e-4, 1e-3, 1e-2, 1e-1, 1.0, 10.0)):
+    """Causal ridge forecast: predict Y[t+h] from F[t]. alpha tuned on
+    validation slice (no test leakage). Returns NRMSE on the test slice."""
+    T = len(F); h = horizon
+    ntr = int(round(train_frac * T)); nval = int(round((train_frac + val_frac) * T))
+    if T - h <= nval + 5:
+        return float("nan")
+    def fit(A_, b_, a):
+        return np.linalg.solve(A_.T @ A_ + a * np.eye(A_.shape[1]), A_.T @ b_)
+    Ftr, Ytr = F[:ntr - h], Y[h:ntr]
+    Fva, Yva = F[ntr:nval - h], Y[ntr + h:nval]
+    best_a, best_v = alphas[0], np.inf
+    for a in alphas:
+        W = fit(Ftr, Ytr, a)
+        v = np.mean((Fva @ W - Yva) ** 2)
+        if v < best_v:
+            best_v, best_a = v, a
+    W = fit(F[:nval - h], Y[h:nval], best_a)
+    Fte, Yte = F[nval:T - h], Y[nval + h:T]
+    rmse = np.sqrt(np.mean((Fte @ W - Yte) ** 2, axis=0))
+    return float(np.mean(rmse / (np.std(Yte, axis=0) + 1e-12)))
+
+
+def _val_nrmse(F, Y, h=1):
+    """Validation-only NRMSE (train [0,0.7), val [0.7,0.85)) for k_fb/tau
+    selection; never touches test."""
+    T = len(F); ntr = int(round(0.7 * T)); nval = int(round(0.85 * T))
+    if nval - h <= ntr or T <= nval:
+        return float("inf")
+    W = np.linalg.solve(F[:ntr-h].T @ F[:ntr-h] + 1e-3*np.eye(F.shape[1]),
+                         F[:ntr-h].T @ Y[h:ntr])
+    vp = F[ntr:nval-h] @ W
+    return float(np.mean((vp - Y[ntr+h:nval]) ** 2))
+
+
+def phase1(n1=1, n2=4, n_steps=1000, p_switch=0.02, horizon=1,
+            data_seed=0, res_seed=0, window=5,
+            k_fbs=(0.0, 0.5, 1.0, 2.0), taus=(1.0, 2.0)):
+    """Go/no-go: does feedback beat open-loop QRC on the nonstationary task?
+    k_fb and tau tuned on validation (k_fb=0 = open-loop is a candidate, so
+    feedback only 'wins' if it genuinely helps). Proceed only if the tuned
+    FB-QRC beats the open-loop (k_fb=0) baseline by >=10% relative NRMSE."""
+    q = n1 + n2; assert q <= 11
+    x, s = generate_regime_switching(n_steps, seed=data_seed, p_switch=p_switch)
+    ang = np.clip(x, -np.pi, np.pi)
+    Y = x[:, None]
+    t0 = time.time()
+    # open-loop reference (k_fb=0), tuned over tau
+    best_open = None
+    for tau in taus:
+        F = windowed(fb_qrc_features(ang, n1, n2, seed=res_seed, readout="ZZ",
+                                       tau=tau, k_fb=0.0), window)
+        v = _val_nrmse(F, Y, horizon)
+        if best_open is None or v < best_open[0]:
+            best_open = (v, tau, F)
+    _, open_tau, F_open = best_open
+    nrmse_open = ridge_forecast(F_open, Y, horizon)
+    # feedback, tuned over (k_fb>0, tau) on validation
+    best_fb = None
+    for tau in taus:
+        for k in k_fbs:
+            if k == 0.0:
+                continue
+            F = windowed(fb_qrc_features(ang, n1, n2, seed=res_seed,
+                                          readout="ZZ", tau=tau, k_fb=k), window)
+            v = _val_nrmse(F, Y, horizon)
+            if best_fb is None or v < best_fb[0]:
+                best_fb = (v, tau, k, F)
+    _, fb_tau, fb_k, F_fb = best_fb
+    nrmse_fb = ridge_forecast(F_fb, Y, horizon)
+    # fixed-window linear floor
+    nrmse_lin = ridge_forecast(windowed(x[:, None], window), Y, horizon)
+    rel = (nrmse_open - nrmse_fb) / nrmse_open
+    print(f"  open-loop QRC (tau={open_tau}): NRMSE={nrmse_open:.4f}")
+    print(f"  feedback QRC  (tau={fb_tau}, k_fb={fb_k}): NRMSE={nrmse_fb:.4f}")
+    print(f"  fixed-window linear floor:      NRMSE={nrmse_lin:.4f}")
+    print(f"  FB vs open-loop: {rel*100:+.1f}%  (H1 needs >=10% -> "
+          f"{'PASS' if rel >= 0.10 else 'FAIL'})  [{time.time()-t0:.0f}s]")
+    outdir = ROOT / "results" / "feedback_qrc"; outdir.mkdir(parents=True, exist_ok=True)
+    out = {"config": {"n1": n1, "n2": n2, "q": q, "n_steps": n_steps,
+                       "p_switch": p_switch, "horizon": horizon,
+                       "data_seed": data_seed, "res_seed": res_seed,
+                       "window": window},
+            "results": {"open_loop": {"nrmse": nrmse_open, "tau": open_tau},
+                         "feedback": {"nrmse": nrmse_fb, "tau": fb_tau, "k_fb": fb_k},
+                         "linear": {"nrmse": nrmse_lin},
+                         "rel_fb_vs_open": rel,
+                         "H1_pass": bool(rel >= 0.10)}}
+    fp = outdir / f"phase1_ps{p_switch}_h{horizon}_ds{data_seed}_rs{res_seed}.json"
+    fp.write_text(json.dumps(out, indent=2))
+    print(f"  Saved {fp}  (sha {hashlib.sha256(fp.read_bytes()).hexdigest()[:12]})")
+    return out
+
+
+def esn_features(x, n_res, seed, sr, leak, in_scale=0.5, density=0.1):
+    """Classical echo-state-network reservoir features for a 1-D input."""
+    rng = np.random.default_rng(seed)
+    Win = rng.uniform(-in_scale, in_scale, (n_res, 1))
+    W = rng.standard_normal((n_res, n_res)) * (rng.uniform(0, 1, (n_res, n_res)) < density)
+    e = np.max(np.abs(np.linalg.eigvals(W)))
+    if e > 1e-8:
+        W *= sr / e
+    r = np.zeros(n_res); out = np.zeros((len(x), n_res))
+    for t in range(len(x)):
+        r = (1 - leak) * r + leak * np.tanh(W @ r + Win[:, 0] * x[t])
+        out[t] = r
+    return out
+
+
+def poly2_features(x, window):
+    """Windowed degree-2 polynomial features of a 1-D series."""
+    Wlin = windowed(x[:, None], window)
+    rows = [np.concatenate([v, np.concatenate([v[i] * v[i:] for i in range(len(v))])])
+            for v in Wlin]
+    return np.array(rows)
+
+
+def mda(F, Y, horizon=1, train_frac=0.7, val_frac=0.15,
+         alphas=(1e-4, 1e-3, 1e-2, 1e-1, 1.0, 10.0)):
+    """Mean directional accuracy of the next move (sign of Y[t+h]-Y[t]) on the
+    test slice, alpha tuned on validation. Also returns persistence MDA."""
+    T = len(F); h = horizon
+    ntr = int(round(train_frac * T)); nval = int(round((train_frac + val_frac) * T))
+    if T - h <= nval + 5:
+        return float("nan"), float("nan")
+    def fit(A_, b_, a):
+        return np.linalg.solve(A_.T @ A_ + a * np.eye(A_.shape[1]), A_.T @ b_)
+    best_a, best_v = alphas[0], np.inf
+    for a in alphas:
+        W = fit(F[:ntr-h], Y[h:ntr], a)
+        v = np.mean((F[ntr:nval-h] @ W - Y[ntr+h:nval]) ** 2)
+        if v < best_v:
+            best_v, best_a = v, a
+    W = fit(F[:nval-h], Y[h:nval], best_a)
+    yp = (F[nval:T-h] @ W).ravel()
+    yref = Y[nval:T-h].ravel()                  # level at time t
+    ytrue = Y[nval+h:T].ravel()
+    obs = np.sign(ytrue - yref)
+    pred = np.sign(yp - yref)
+    m = float(np.mean(pred == obs))
+    persist = float(np.mean(np.sign(yref - Y[nval-h:T-2*h].ravel()) == obs))
+    return m, persist
+
+
+def phase2(n1=1, n2=4, n_steps=1200, p_switch=0.05, horizon=1, window=5,
+            data_seeds=(0, 1, 2), res_seeds=(0, 1, 2),
+            k_fbs=(0.5, 1.0, 2.0), taus=(1.0, 2.0),
+            esn_srs=(0.7, 0.9, 0.99), esn_leaks=(0.2, 0.5, 0.9)):
+    """The real test: FB-QRC vs tuned ESN vs Poly2 vs open-loop QRC, NRMSE +
+    MDA, over data_seeds x res_seeds. All hyperparameters tuned on validation
+    only. ESN gets the SAME tuning budget as FB-QRC (no strawman)."""
+    q = n1 + n2; assert q <= 11
+    methods = ["FB_QRC", "OpenLoop_QRC", "ESN", "Poly2", "Linear"]
+    acc = {m: [] for m in methods}
+    accM = {m: [] for m in methods}
+    persistM = []
+    t0 = time.time()
+    for ds in data_seeds:
+        x, s = generate_regime_switching(n_steps, seed=ds, p_switch=p_switch)
+        ang = np.clip(x, -np.pi, np.pi); Y = x[:, None]
+        Fpoly = poly2_features(x, window); Flin = windowed(x[:, None], window)
+        acc["Poly2"].append(ridge_forecast(Fpoly, Y, horizon))
+        acc["Linear"].append(ridge_forecast(Flin, Y, horizon))
+        mp, pp = mda(Fpoly, Y, horizon); accM["Poly2"].append(mp)
+        ml, _ = mda(Flin, Y, horizon); accM["Linear"].append(ml)
+        persistM.append(pp)
+        for rs in res_seeds:
+            # FB-QRC: tune (k_fb>0, tau) on validation
+            best_fb, best_open = None, None
+            for tau in taus:
+                Fo = windowed(fb_qrc_features(ang, n1, n2, seed=rs, readout="ZZ",
+                                                tau=tau, k_fb=0.0), window)
+                vo = _val_nrmse(Fo, Y, horizon)
+                if best_open is None or vo < best_open[0]:
+                    best_open = (vo, Fo)
+                for k in k_fbs:
+                    Ff = windowed(fb_qrc_features(ang, n1, n2, seed=rs,
+                                    readout="ZZ", tau=tau, k_fb=k), window)
+                    vf = _val_nrmse(Ff, Y, horizon)
+                    if best_fb is None or vf < best_fb[0]:
+                        best_fb = (vf, Ff)
+            # ESN: tune (sr, leak) on validation, matched feature dim
+            n_res = best_fb[1].shape[1]
+            best_esn = None
+            for sr in esn_srs:
+                for lk in esn_leaks:
+                    Fe = windowed(esn_features(x, n_res // window, seed=rs,
+                                                 sr=sr, leak=lk), window)
+                    ve = _val_nrmse(Fe, Y, horizon)
+                    if best_esn is None or ve < best_esn[0]:
+                        best_esn = (ve, Fe)
+            acc["FB_QRC"].append(ridge_forecast(best_fb[1], Y, horizon))
+            acc["OpenLoop_QRC"].append(ridge_forecast(best_open[1], Y, horizon))
+            acc["ESN"].append(ridge_forecast(best_esn[1], Y, horizon))
+            mf, _ = mda(best_fb[1], Y, horizon); accM["FB_QRC"].append(mf)
+            mo, _ = mda(best_open[1], Y, horizon); accM["OpenLoop_QRC"].append(mo)
+            me, _ = mda(best_esn[1], Y, horizon); accM["ESN"].append(me)
+    def ms(d, k): a = np.array(d[k]); return float(a.mean()), float(a.std())
+    print(f"  {'method':>13} {'NRMSE':>16} {'MDA':>16}")
+    for m in methods:
+        nm, ns = ms(acc, m); mm, msd = ms(accM, m)
+        print(f"  {m:>13}  {nm:.4f}+/-{ns:.4f}  {mm:.4f}+/-{msd:.4f}")
+    print(f"  {'persistence':>13}  {'':>16}  {np.mean(persistM):.4f}")
+    fb_n, _ = ms(acc, "FB_QRC"); esn_n, _ = ms(acc, "ESN")
+    print(f"\n  FB-QRC vs ESN (NRMSE): {(esn_n-fb_n)/esn_n*100:+.1f}%  "
+          f"({'FB better' if fb_n < esn_n else 'ESN better'})  [{time.time()-t0:.0f}s]")
+    outdir = ROOT / "results" / "feedback_qrc"; outdir.mkdir(parents=True, exist_ok=True)
+    out = {"config": {"n1": n1, "n2": n2, "q": q, "n_steps": n_steps,
+                       "p_switch": p_switch, "horizon": horizon, "window": window,
+                       "data_seeds": list(data_seeds), "res_seeds": list(res_seeds)},
+            "nrmse": {m: acc[m] for m in methods},
+            "mda": {m: accM[m] for m in methods},
+            "persistence_mda": persistM}
+    fp = outdir / f"phase2_ps{p_switch}_h{horizon}.json"
+    fp.write_text(json.dumps(out, indent=2))
+    print(f"  Saved {fp}  (sha {hashlib.sha256(fp.read_bytes()).hexdigest()[:12]})")
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--self-test", action="store_true")
+    ap.add_argument("--phase1", action="store_true")
+    ap.add_argument("--phase2", action="store_true")
+    ap.add_argument("--p-switch", type=float, default=0.02)
+    ap.add_argument("--p-switches", type=float, nargs="+", default=None)
+    ap.add_argument("--horizon", type=int, default=1)
     args = ap.parse_args()
     if args.self_test:
         self_test(); return
-    print("Phase 0 only: run with --self-test. Science phases come next.")
+    if args.phase1:
+        ps_list = args.p_switches if args.p_switches else [args.p_switch]
+        for ps in ps_list:
+            print(f"=== Phase 1 go/no-go: feedback vs open-loop "
+                  f"(p_switch={ps}, horizon={args.horizon}) ===")
+            phase1(p_switch=ps, horizon=args.horizon)
+            print()
+        return
+    if args.phase2:
+        print(f"=== Phase 2: FB-QRC vs tuned ESN/Poly2/open-loop "
+              f"(p_switch={args.p_switch}, horizon={args.horizon}, 3x3 seeds) ===")
+        phase2(p_switch=args.p_switch, horizon=args.horizon); return
+    print("Run with --self-test, --phase1, or --phase2.")
 
 
 if __name__ == "__main__":
