@@ -107,8 +107,7 @@ def main():
     ax.set_xticklabels([f"K = q = {q}\n(feat dim {2**q})" for q in qs])
     ax.set_xlabel("matched problem complexity   (POD modes K = qubit count q)")
     ax.set_ylabel("paired Wilcoxon p-value (8 seeds)\nlower = more significant")
-    ax.set_title("Quantum advantage emerges with problem complexity\n"
-                  "p-values for QRC against classical baselines, K=q scaling")
+    ax.set_title("Paired Wilcoxon p-values: K=q matched-complexity sweep (shallow-water)")
 
     ax.legend(loc="upper right", fontsize=9, frameon=True, ncol=1)
     ax.grid(True, which="major", axis="y", alpha=0.3, zorder=0)
