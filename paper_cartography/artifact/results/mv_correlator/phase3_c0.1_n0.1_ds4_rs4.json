@@ -1,0 +1,41 @@
+{
+  "config": {
+    "N": 5,
+    "n2": 3,
+    "q": 8,
+    "n_steps": 800,
+    "coupling": 0.1,
+    "horizons": [
+      1
+    ],
+    "data_seed": 4,
+    "res_seed": 4,
+    "shots": 0,
+    "obs_noise": 0.1,
+    "dataset": "henon"
+  },
+  "results_per_horizon": {
+    "1": {
+      "Poly2": {
+        "nrmse": 0.35627406985134036,
+        "mda": 0.9495798319327731,
+        "mda_persist": 0.14285714285714285
+      },
+      "QRC": {
+        "nrmse": 0.7974154814834529,
+        "mda": 0.9008403361344538,
+        "mda_persist": 0.14285714285714285
+      },
+      "Poly2+QRC": {
+        "nrmse": 0.338530851969589,
+        "mda": 0.957983193277311,
+        "mda_persist": 0.14285714285714285
+      },
+      "qrc_cfg": {
+        "readout": "ZZ_QR2",
+        "scale": 1.5708,
+        "tau": 1.0
+      }
+    }
+  }
+}

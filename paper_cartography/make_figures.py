@@ -43,16 +43,18 @@ ax.errorbar(couplings, qrc, yerr=qrc_s, fmt="s--", color=C_QUANTUM, capsize=3,
 ax.errorbar(couplings, cat, yerr=cat_s, fmt="^:", color=C_CAT, capsize=3,
             label=r"Poly2 $\oplus$ QRC", zorder=3)
 ax.axhline(1.0, color="black", lw=1.0, ls=":", zorder=5)
-ax.text(0.99, 1.01, "trivial-mean predictor", fontsize=8, color="black",
-         ha="right", va="bottom", zorder=6, transform=ax.get_yaxis_transform())
+ax.text(0.02, 1.02, "trivial-mean predictor", fontsize=8, color="black",
+         ha="left", va="bottom", zorder=6, transform=ax.get_yaxis_transform())
+ax.set_ylim(top=max(qrc[i] + qrc_s[i] for i in range(len(couplings))) + 0.18)
 ax.set_xlabel("cross-asset coupling $c$")
 ax.set_ylabel("test NRMSE (one-step)")
 ax.set_title("Case I: correlator QRC vs.\npolynomial control", fontsize=11)
 ax.set_xticks(couplings)
-ax.legend(frameon=False, fontsize=9, loc="center left")
+ax.legend(frameon=False, fontsize=9, loc="upper left",
+          bbox_to_anchor=(1.02, 1.0), borderaxespad=0.0)
 ax.grid(alpha=0.3, zorder=0)
 fig.tight_layout()
-fig.savefig(HERE / "fig_caseI.pdf")
+fig.savefig(HERE / "fig_caseI.pdf", bbox_inches="tight")
 print("wrote fig_caseI.pdf  | QRC", [round(x,3) for x in qrc],
       "Poly2", [round(x,3) for x in poly2], "cat", [round(x,3) for x in cat])
 
@@ -61,7 +63,7 @@ print("wrote fig_caseI.pdf  | QRC", [round(x,3) for x in qrc],
 # ---------------------------------------------------------------------------
 d = json.load(open(FBQ / "phase2_ps0.05_h1.json"))
 order = ["ESN", "Linear", "Poly2", "FB_QRC", "OpenLoop_QRC"]
-labels = ["ESN\n(tuned)", "Linear", "Poly2", "Feedback\nQRC", "Open-loop\nQRC"]
+labels = ["ESN (tuned)", "Linear", "Poly2", "Feedback QRC", "Open-loop QRC"]
 colors = [C_CLASSICAL, C_CLASSICAL, C_CLASSICAL, C_QUANTUM, C_OPENLOOP]
 means = [np.mean(d["nrmse"][m]) for m in order]
 stds = [np.std(d["nrmse"][m]) for m in order]
@@ -70,12 +72,12 @@ fig, ax = plt.subplots(figsize=(5.2, 3.7))
 bars = ax.bar(range(len(order)), means, yerr=stds, capsize=4,
         color=colors, edgecolor="black", linewidth=0.6, zorder=2)
 ax.axhline(1.0, color="black", lw=1.0, ls=":", zorder=5)
-ax.text(0.98, 1.005, "trivial-mean predictor", fontsize=8, color="black",
-         ha="right", va="bottom", zorder=6,
+ax.text(0.5, 1.02, "trivial-mean predictor", fontsize=8, color="black",
+         ha="center", va="bottom", zorder=6,
          transform=ax.get_yaxis_transform())
 ax.set_ylim(0, max(means) + max(stds) + 0.12)
 ax.set_xticks(range(len(order)))
-ax.set_xticklabels(labels, fontsize=9)
+ax.set_xticklabels(labels, fontsize=8.5, rotation=20, ha="right")
 ax.set_ylabel("test NRMSE (one-step)")
 ax.set_title("Case II: feedback QRC vs. tuning-matched baselines", fontsize=10.5)
 # Legend distinguishing classical / quantum / open-loop
@@ -83,8 +85,9 @@ from matplotlib.patches import Patch
 ax.legend(handles=[Patch(facecolor=C_CLASSICAL, edgecolor="black", label="classical"),
                    Patch(facecolor=C_QUANTUM, edgecolor="black", label="feedback QRC"),
                    Patch(facecolor=C_OPENLOOP, edgecolor="black", label="open-loop QRC")],
-          frameon=False, fontsize=8.5, loc="upper left")
+          frameon=False, fontsize=8.5, loc="upper left",
+          bbox_to_anchor=(1.02, 1.0), borderaxespad=0.0)
 ax.grid(axis="y", alpha=0.3, zorder=0)
 fig.tight_layout()
-fig.savefig(HERE / "fig_caseII.pdf")
+fig.savefig(HERE / "fig_caseII.pdf", bbox_inches="tight")
 print("wrote fig_caseII.pdf |", {m: round(np.mean(d["nrmse"][m]),3) for m in order})

@@ -3,14 +3,14 @@
 mv_correlator_qrc.py - 2-point-correlator QRC for multivariate volatility with
 linear + BILINEAR cross-asset spillover.  See notes/mv_correlator_plan.md.
 
-Phase 0 here = data generator (linear gamma + bilinear beta), Bayat-faithful
+Phase 0 here = data generator (linear gamma + bilinear beta), physics-faithful
 recurrent TFIM reservoir, three readout tiers (Z / ZZ / ZZ_QR2), and the
 G1-G6 correctness gates in --self-test.  No science is run until the gates pass.
 
 Readout tiers:
   Z      : <Z_i>                         (q features)
   ZZ     : <Z_i> + <Z_i Z_k>             (q + q(q-1)/2 features)
-  ZZ_QR2 : ZZ computed at tau AND tau/2, concatenated   (Bayat QR2 ensemble)
+  ZZ_QR2 : ZZ computed at tau AND tau/2, concatenated   (QR2 ensemble)
 
 Gates:
   G1 data finite & nonlinear (linear-R2 of target drops with beta; full R2 high)
@@ -76,7 +76,7 @@ def generate_spillover(n_assets, n_steps, seed, gamma, beta,
 
 
 # ---------------------------------------------------------------------------
-# Bayat-faithful recurrent TFIM reservoir
+# physics-faithful recurrent TFIM reservoir
 # ---------------------------------------------------------------------------
 
 def kron_op(op, site, q):

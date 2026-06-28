@@ -116,7 +116,7 @@ def two_site_xx(i, j, q):
 
 
 def reservoir_hamiltonian(q, seed, v=1.0):
-    """Bayat-style fully-connected XX + transverse Z field."""
+    """Fully-connected XX + transverse-Z field."""
     rng = np.random.default_rng(20_000 + seed)
     H = np.zeros((2 ** q, 2 ** q), dtype=complex)
     for i in range(q):
@@ -167,7 +167,7 @@ def fb_qrc_features(x_series, n1, n2, seed, readout="ZZ", mem_depth=3,
     k_fb=0 recovers the open-loop reservoir EXACTLY (gate G3).
     Single input qubit (n1=1) recommended for a 1-D series; memory n2 qubits.
     Recurrence: sliding window of mem_depth most recent drives, partial-trace
-    input qubits between encodings (Bayat-style)."""
+    input qubits between encodings."""
     q = n1 + n2
     H_res = reservoir_hamiltonian(q, seed)
     U = evol_unitary(H_res, tau)

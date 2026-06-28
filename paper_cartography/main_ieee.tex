@@ -1,9 +1,10 @@
-\documentclass[conference]{IEEEtran}
+\documentclass[10pt,conference]{IEEEtran}
 
 \usepackage[utf8]{inputenc}
 \usepackage[T1]{fontenc}
 \usepackage{amsmath,amssymb,amsfonts}
 \usepackage{graphicx}
+\usepackage{float}
 \usepackage{booktabs}
 \usepackage{cite}
 \usepackage{xcolor}
@@ -18,29 +19,26 @@ as the Quantum Model, Does Quantum Reservoir\\
 Computing Still Win?}
 
 \author{\IEEEauthorblockN{Tushar Pandey}
-\IEEEauthorblockA{\textit{Texas A\&M University} \\
-\texttt{tusharp@tamu.edu}}}
+\IEEEauthorblockA{\textit{Texas A\&M University}\\
+ORCID: 0000-0001-7448-5723}}
 
 \maketitle
 
 \begin{abstract}
 Can a small quantum computer forecast a changing signal better than an ordinary
-classical method? Many studies say yes, but the classical methods they compare
-against are often left in a basic, untuned state while the quantum model is
-carefully optimised. We ask what happens when the classical competitor is given
-exactly the same care: the same size and the same amount of tuning effort. We
-study two popular reasons a quantum reservoir is thought to help, using exact
-simulations of small quantum systems (up to eleven qubits) on prediction tasks.
-In both cases the quantum advantage disappears once the comparison is fair. In
-the first, extra quantum measurements add nothing that a simple classical formula
-of the same size does not already provide. In the second, a feedback loop genuinely
-helps the quantum model, turning a useless setup into a working predictor, yet a
-well-tuned classical network still predicts slightly more accurately, and the gap
-is statistically reliable. Our point is not that quantum reservoirs can never win,
-but that two of their commonly cited advantages do not hold up against fair
-classical competitors at this scale. We provide these matched comparisons as a
-simple, reusable checklist for honest benchmarking. All results are fully
-reproducible from fixed random seeds.
+classical method? Many studies say yes, but the classical baselines they compare
+against are often left untuned while the quantum model is carefully optimised. We
+ask what happens when the classical competitor is given the same care: the same
+size and the same tuning effort. Studying two popular reasons a quantum reservoir
+is thought to help, in exact simulations of small systems (up to eleven qubits),
+we find the advantage disappears once the comparison is fair. Extra quantum
+measurements add nothing beyond a classical formula of the same size; and although
+a feedback loop turns a useless quantum setup into a working predictor, a
+well-tuned classical network still predicts slightly more accurately, by a
+statistically reliable margin. The point is not that quantum reservoirs can never
+win, but that two commonly cited advantages do not survive a fair comparison at
+this scale. We offer these matched comparisons as a reusable checklist for honest
+benchmarking; all results are reproducible from fixed random seeds.
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -69,11 +67,10 @@ polynomial readout, the strength of the conclusion depends entirely on whether
 the classical model was given an equal chance: the same feature-space capacity,
 the same hyperparameter-tuning budget, the same causal evaluation protocol, and a
 metric that does not implicitly favour the quantum side. In practice these
-conditions are often not met. Baselines are reported with default settings while
-the quantum model is tuned; ``classical reservoir'' refers to a different
-architecture than the quantum one; efficiency is measured as simulation
-wall-clock time rather than any hardware-relevant quantity; and directional
-accuracy is reported without the persistence control that makes it meaningful.
+conditions are often not met: baselines run at default settings while the quantum
+model is tuned, ``classical reservoir'' names a different architecture, efficiency
+is measured as simulation wall-clock time, and directional accuracy is reported
+without a persistence control.
 
 This paper asks a narrow question: \emph{when the classical baseline is matched
 in capacity and tuning, does the quantum reservoir's reported advantage survive?}
@@ -86,12 +83,10 @@ simulation harness. We state the scope plainly: this is a simulation study at
 sizes that classical hardware can represent exactly ($q \le 11$); the claim is
 ``no advantage here, under fair comparison,'' not ``no advantage is possible.''
 
-We focus on these two advantage mechanisms because they admit the cleanest
-matched controls. They are part of a broader fair-comparison cartography of QRC
-advantage claims, additional angles of which (high-body trajectory observables,
-channel-spectrum learning, and cross-asset volatility spillover) we defer to a
-companion treatment; the methodology and the two controls developed here apply to
-those settings as well.
+These two mechanisms admit the cleanest matched controls. Other angles of the
+broader fair-comparison cartography (high-body trajectory observables,
+channel-spectrum learning, cross-asset volatility spillover) are deferred to a
+companion treatment, to which the same methodology applies.
 
 \section{Methods}
 \label{sec:methods}
@@ -119,16 +114,13 @@ are compared, their readout feature dimensions are matched so that the compariso
 is not confounded by readout width.
 
 \paragraph{Correctness gates} Before any result is generated, an automated
-self-test verifies: the reservoir state is physical ($\mathrm{Tr}\,\rho=1$ and
-all measured expectations lie in $[-1,1]$); the two-point readout computed from
-the density-matrix diagonal agrees with the explicit operator expectation to
-machine precision; finite-shot estimates converge to the exact values as the shot
-count grows; and, for the feedback model, that the feedback path is wired
-correctly (with gain zero it reproduces the open-loop reservoir to machine
-precision) and is strictly causal (perturbing a future input leaves earlier
-features unchanged). Every reported number is read back from disk and checked
-against a content hash; all results in this paper are deterministic and reproduce
-bit-for-bit.
+self-test verifies that the reservoir state is physical ($\mathrm{Tr}\,\rho=1$,
+expectations in $[-1,1]$), that the two-point readout from the density-matrix
+diagonal matches the explicit operator expectation to machine precision, that
+finite-shot estimates converge to the exact values, and that the feedback path is
+strictly causal and reproduces the open-loop reservoir at gain zero. Every
+reported number is read back from disk against a content hash; all results are
+deterministic and reproduce bit-for-bit.
 
 \paragraph{Metrics} We report normalised root-mean-square error ($\nrmse$,
 normalised by the per-target standard deviation, so that $\nrmse=1$ is the
@@ -182,12 +174,9 @@ degree-2 polynomial model (\textsc{Poly2}) whose features are all pairwise
 products of the windowed inputs, the \emph{capacity-matched} classical control,
 given \emph{more} features than the QRC; and the concatenation
 $\textsc{Poly2}\oplus\textsc{QRC}$, which tests directly whether the quantum
-features add anything to the polynomial basis. Observation noise of standard
-deviation $0.1$ is added so that no model can solve the map exactly through its
-generating polynomial. The concatenation ablation, running the classical and
-quantum feature sets together and asking whether the union beats the classical
-part alone, is exactly the control omitted by typical hybrid-architecture
-reports.
+features add anything to the polynomial basis. Observation noise of standard deviation $0.1$ is added so that no model can solve
+the map exactly through its generating polynomial. The concatenation ablation is
+exactly the control omitted by typical hybrid-architecture reports.
 
 \subsection{Results}
 
@@ -206,18 +195,19 @@ accuracy: \textsc{Poly2} reaches $\mathrm{MDA}\approx 0.96$ (persistence $\le
 \textsc{Poly2}. The coupling axis, which one might expect to favour the joint
 quantum encoding, instead makes the QRC relatively worse (Fig.~\ref{fig:caseI}).
 
-\begin{table}[t]
+\begin{table}[H]
 \centering
 \caption{Case study I (one-step, observation noise $0.1$): correlator QRC vs.\
 the capacity-matched \textsc{Poly2} control and their concatenation, on coupled
 H\'enon dynamics at three couplings $c$. Values are mean $\pm$ s.d.\ over five
-data-seed $\times$ reservoir-seed pairs. Lower $\nrmse$ is
-better; $\nrmse<1$ is predictive. ``cat'' is $\textsc{Poly2}\oplus\textsc{QRC}$;
-the final column is the relative $\nrmse$ reduction of cat over \textsc{Poly2}
-(positive $=$ cat lower). Windowed feature dimensions: QRC $72$, \textsc{Poly2}
-$135$, so the polynomial is given \emph{more} capacity than the quantum readout,
-not less. All values verified from disk.}
+data-seed $\times$ reservoir-seed pairs; lower $\nrmse$ is better, $\nrmse<1$
+predictive. ``cat'' is $\textsc{Poly2}\oplus\textsc{QRC}$; the final column is the
+relative $\nrmse$ reduction of cat over \textsc{Poly2}. Windowed feature
+dimensions: QRC $72$, \textsc{Poly2} $135$, so the polynomial is given \emph{more}
+capacity, not less.}
 \label{tab:corr}
+\setlength{\tabcolsep}{4pt}
+\resizebox{\columnwidth}{!}{%
 \begin{tabular}{lcccc}
 \toprule
 $c$ & QRC & \textsc{Poly2} & cat & cat vs.\ \textsc{Poly2} \\
@@ -226,12 +216,12 @@ $0.0$ & $0.726\pm0.026$ & $0.363\pm0.012$ & $0.354\pm0.012$ & $+2.6\%\pm0.3$ \\
 $0.1$ & $0.766\pm0.034$ & $0.335\pm0.012$ & $0.326\pm0.007$ & $+2.6\%\pm1.5$ \\
 $0.2$ & $1.030\pm0.258$ & $0.305\pm0.132$ & $0.297\pm0.125$ & $+2.7\%\pm1.0$ \\
 \bottomrule
-\end{tabular}
+\end{tabular}}
 \end{table}
 
 \begin{figure}[t]
 \centering
-\includegraphics[width=0.92\linewidth]{fig_caseI.pdf}
+\includegraphics[width=0.62\linewidth]{fig_caseI.pdf}
 \caption{Case study I. One-step test NRMSE versus cross-asset coupling $c$ for the
 correlator QRC, the capacity-matched degree-2 polynomial (\textsc{Poly2}), and
 their concatenation $\textsc{Poly2}\oplus\textsc{QRC}$. The polynomial control is
@@ -296,7 +286,7 @@ an illustrative trend, with the load-bearing seed-averaged number taken from the
 lower block. This is, to our knowledge, the clearest case in our study of a
 quantum reservoir mechanism doing something its open-loop version cannot.
 
-\begin{table}[t]
+\begin{table}[H]
 \centering
 \caption{Case study II. Upper: feedback vs.\ open-loop QRC across switching rates
 $p_{\mathrm{sw}}$ (single seed, illustrative). Lower: the fair test at
@@ -358,7 +348,7 @@ the classical pack.
 
 \begin{figure}[t]
 \centering
-\includegraphics[width=0.92\linewidth]{fig_caseII.pdf}
+\includegraphics[width=0.62\linewidth]{fig_caseII.pdf}
 \caption{Case study II. One-step test NRMSE at $p_{\mathrm{sw}}=0.05$ (mean $\pm$
 s.d.\ over $10\times10$ seeds). Closing the feedback loop rescues the useless
 open-loop reservoir (rightmost) to predictive performance, but the tuning-matched
@@ -410,15 +400,19 @@ computing as a whole.
 
 \section*{Data Availability}
 
-The result files and the analysis scripts that generate every table and figure in
-this paper are available at
-\url{https://github.com/pandey-tushar/Quantum_Chaos_solver} (branch
-\texttt{paper-7-cartography}). The repository includes the per-seed result JSONs
-for Case~I and Case~II, the scripts (\texttt{mv\_correlator\_qrc.py},
-\texttt{feedback\_qrc.py}), the figure script (\texttt{make\_figures.py}), and a
-README mapping each table to the command that reproduces it. All results are
-deterministic and reproduce bit-for-bit from the provided random seeds.
+The result files and analysis scripts that reproduce every table and figure are
+at \url{https://github.com/pandey-tushar/Quantum_Chaos_solver} (branch
+\texttt{paper-7-cartography}), including the per-seed JSONs for Case~I and~II, the
+experiment and figure scripts, and a README mapping each table to its command. All
+results reproduce bit-for-bit from the provided random seeds.
 
+\section*{Acknowledgment}
+
+The author used Claude (Anthropic) to assist with running and optimizing the
+simulation code. All technical content, results, and conclusions are the
+author's own.
+
+\footnotesize
 \begin{thebibliography}{99}
 
 \bibitem{jaeger2001} H.~Jaeger, ``The `echo state' approach to analysing and
