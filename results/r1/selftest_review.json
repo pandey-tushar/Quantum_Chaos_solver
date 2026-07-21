@@ -1,0 +1,17 @@
+{
+  "mode": "selftest",
+  "config": {
+    "n_qubits": 4
+  },
+  "gates": {
+    "G-PARITY": true,
+    "G-PS-FD": true,
+    "G-SPSA": true,
+    "G-DET": true,
+    "G-PAR": true,
+    "G-BOUNDED": true
+  },
+  "all_pass": true,
+  "git_rev": "39f314237f72d93839efa93082d2affb638bc708",
+  "sha256_no_timing": "6da1c7a09e3383e8e58cefacc83253c3a08ae4b32000c32a9d5cf675819ca189"
+}

@@ -1,0 +1,527 @@
+{
+  "description": "Post-hoc corrections analysis for the MLST resubmission, computed from results/r1/*.json only (no experiment re-run).",
+  "e1_live_dead": {
+    "threshold_dead_var": 1e-28,
+    "per_L": {
+      "1": {
+        "n_inits": 100,
+        "n_times": 24,
+        "n_params": 15,
+        "n_cells": 360,
+        "n_dead": 312,
+        "dead_fraction": 0.8666666666666667,
+        "live_fraction": 0.1333333333333333,
+        "pooled_mean_var": 0.00878498543682841,
+        "live_mean_var": 0.06588739077621307,
+        "harness_mcclean_mean": 0.008784985436828409,
+        "harness_mcclean_median": 2.464752631143144e-33,
+        "pooled_vs_harness_abs_diff": 1.734723475976807e-18,
+        "max_abs_gradient_dead_cells": 3.0531133177191805e-16,
+        "max_abs_gradient_live_cells": 0.499844270190898,
+        "dilution_identity_live_mean_x_live_frac": 0.008784985436828407,
+        "dilution_identity_abs_diff": 3.469446951953614e-18
+      },
+      "3": {
+        "n_inits": 100,
+        "n_times": 24,
+        "n_params": 45,
+        "n_cells": 1080,
+        "n_dead": 648,
+        "dead_fraction": 0.6,
+        "live_fraction": 0.4,
+        "pooled_mean_var": 0.00641322234516427,
+        "live_mean_var": 0.016033055862910678,
+        "harness_mcclean_mean": 0.006413222345164271,
+        "harness_mcclean_median": 4.4049116995482146e-33,
+        "pooled_vs_harness_abs_diff": 8.673617379884035e-19,
+        "max_abs_gradient_dead_cells": 3.3306690738754696e-16,
+        "max_abs_gradient_live_cells": 0.4879780471133036,
+        "dilution_identity_live_mean_x_live_frac": 0.006413222345164272,
+        "dilution_identity_abs_diff": 1.734723475976807e-18
+      },
+      "5": {
+        "n_inits": 100,
+        "n_times": 24,
+        "n_params": 75,
+        "n_cells": 1800,
+        "n_dead": 672,
+        "dead_fraction": 0.37333333333333335,
+        "live_fraction": 0.6266666666666667,
+        "pooled_mean_var": 0.004591187470144856,
+        "live_mean_var": 0.007326362984273707,
+        "harness_mcclean_mean": 0.004591187470144857,
+        "harness_mcclean_median": 0.004239862445208582,
+        "pooled_vs_harness_abs_diff": 8.673617379884035e-19,
+        "max_abs_gradient_dead_cells": 3.469446951953614e-16,
+        "max_abs_gradient_live_cells": 0.4351838744014601,
+        "dilution_identity_live_mean_x_live_frac": 0.004591187470144857,
+        "dilution_identity_abs_diff": 8.673617379884035e-19
+      }
+    },
+    "live_decay_ratio_L1_over_L5": 8.99319224527131,
+    "live_decay_ratio_L1_over_L3": 4.109471790005459,
+    "pooled_ratio_L1_over_L5": 1.913445158568364,
+    "haar_saturation_scale": {
+      "formula": "2^{-2n} for a local single-qubit-Pauli cost at n qubits",
+      "n_qubits": 4,
+      "value": 0.00390625,
+      "note": "McClean-2018 2-design variance for a LOCAL cost operator; the (1-<Z_0>)/2 cost is local, so its Haar/2-design floor is 2^{-2n}=2^{-8}=3.906e-3 at n=4. Live-only variance decays from ~2^{-4} (L=1) toward this floor (L=5), the canonical decay-then-saturate barren-plateau depth profile."
+    },
+    "live_mean_in_haar_units": {
+      "1": 16.867172038710546,
+      "3": 4.1044623009051335,
+      "5": 1.875548923974069
+    }
+  },
+  "capacity_dispersion": {
+    "per_L": {
+      "1": {
+        "n_seeds": 3,
+        "n_iters": 800,
+        "seeds": [
+          0,
+          1,
+          2
+        ],
+        "per_seed_final_loss": [
+          6721.014874619779,
+          14101.139358833716,
+          10251.724203248166
+        ],
+        "mean": 10357.959478900555,
+        "std_ddof1": 3691.2089890668894,
+        "sem": 2131.120503472935,
+        "min": 6721.014874619779,
+        "max": 14101.139358833716,
+        "spread_max_over_min": 2.098066976772082
+      },
+      "2": {
+        "n_seeds": 3,
+        "n_iters": 800,
+        "seeds": [
+          0,
+          1,
+          2
+        ],
+        "per_seed_final_loss": [
+          3003.870307852595,
+          1669.1651669432883,
+          6937.7761575178465
+        ],
+        "mean": 3870.2705441045764,
+        "std_ddof1": 2739.0787629299516,
+        "sem": 1581.4078611091948,
+        "min": 1669.1651669432883,
+        "max": 6937.7761575178465,
+        "spread_max_over_min": 4.156434782438498
+      },
+      "3": {
+        "n_seeds": 3,
+        "n_iters": 800,
+        "seeds": [
+          0,
+          1,
+          2
+        ],
+        "per_seed_final_loss": [
+          2740.0408301545476,
+          2274.0222004916254,
+          858.4058862013236
+        ],
+        "mean": 1957.4896389491657,
+        "std_ddof1": 979.9398769638556,
+        "sem": 565.7685517547308,
+        "min": 858.4058862013236,
+        "max": 2740.0408301545476,
+        "spread_max_over_min": 3.192010765769517
+      },
+      "5": {
+        "n_seeds": 3,
+        "n_iters": 800,
+        "seeds": [
+          0,
+          1,
+          2
+        ],
+        "per_seed_final_loss": [
+          1193.7833187652927,
+          912.0729928711586,
+          1132.87975483486
+        ],
+        "mean": 1079.5786888237706,
+        "std_ddof1": 148.22594124269784,
+        "sem": 85.57828707735726,
+        "min": 912.0729928711586,
+        "max": 1193.7833187652927,
+        "spread_max_over_min": 1.3088681806127431
+      },
+      "8": {
+        "n_seeds": 3,
+        "n_iters": 800,
+        "seeds": [
+          0,
+          1,
+          2
+        ],
+        "per_seed_final_loss": [
+          1229.9749022523736,
+          1103.9848551299226,
+          1057.3861725940005
+        ],
+        "mean": 1130.4486433254322,
+        "std_ddof1": 89.28586934960839,
+        "sem": 51.549220703826165,
+        "min": 1057.3861725940005,
+        "max": 1229.9749022523736,
+        "spread_max_over_min": 1.163222041418392
+      }
+    }
+  },
+  "optimizer_comparison": {
+    "fd": {
+      "n_seeds": 10,
+      "n_iters": 200,
+      "seeds": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "per_seed_final_loss": [
+        11346.209547879676,
+        9511.2804184493,
+        6166.603685573717,
+        9604.375325996916,
+        10929.256109979997,
+        10858.919598273671,
+        11956.78104271484,
+        12628.676155853886,
+        11236.148823574145,
+        7702.025535010209
+      ],
+      "mean": 10194.027624330636
+    },
+    "ps": {
+      "n_seeds": 5,
+      "n_iters": 200,
+      "seeds": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      "per_seed_final_loss": [
+        11345.999212824525,
+        9511.131300139525,
+        6166.635666228032,
+        9604.469814653281,
+        10929.375648628986
+      ],
+      "mean": 9511.52232849487
+    },
+    "layerwise": {
+      "n_seeds": 5,
+      "config_n_iters_per_stage": 200,
+      "stages": 3,
+      "total_adam_steps_per_seed": 600,
+      "seeds": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      "per_seed_final_loss": [
+        11612.171132935844,
+        11772.786052011346,
+        6612.811525077543,
+        11217.870406115451,
+        14006.209120801113
+      ],
+      "mean": 11044.36964738826
+    },
+    "spsa": {
+      "n_seeds": 5,
+      "config_n_iters": 2000,
+      "seeds": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      "loss_exact_iter_used": [
+        201,
+        201,
+        201,
+        201,
+        201
+      ],
+      "loss_exact_near_200_note": "record nearest iter 200 is iter 201; the exact loss after 200 SPSA updates (loss_exact is evaluated before each update and logged every 10 iters).",
+      "per_seed_loss_exact_near_200": [
+        3467.8943853131022,
+        2907.7930111597957,
+        1427.8949104440221,
+        2575.4604512660967,
+        5197.814948823964
+      ],
+      "mean_loss_exact_near_200": 3115.371541401396,
+      "per_seed_final_loss_at_2000": [
+        1519.4482590369416,
+        1682.8459723383696,
+        749.9379649915843,
+        1102.1182146184738,
+        1310.7999397028789
+      ],
+      "mean_final_loss_at_2000": 1273.0300701376495
+    },
+    "fd_vs_ps_shared_seeds": {
+      "shared_seeds": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      "per_seed_rel_agreement": {
+        "0": 1.853825751316582e-05,
+        "1": 1.567829368236025e-05,
+        "2": 5.186078122118826e-06,
+        "3": 9.837987748226916e-06,
+        "4": 1.093737216397714e-05
+      },
+      "max_rel_agreement": 1.853825751316582e-05,
+      "fd_mean_shared": 9511.545017575922,
+      "ps_mean_shared": 9511.52232849487,
+      "note": "forward FD (eps=1e-4) into the identical Adam loop is numerically the same optimizer as exact parameter-shift; per-seed finals agree to ~1e-5 relative. FD and PS are a consistency check, not two independent optimizers. The FD row's higher mean is entirely the extra 5 seeds (5..9)."
+    },
+    "loss_evaluation_counts": {
+      "L": 3,
+      "n_params": 45,
+      "fd_forward_evals": 9200,
+      "ps_evals_harness_estimator_unit": 36200,
+      "ps_zvector_calls_raw": 54200,
+      "layerwise_evals": 9600,
+      "spsa_loss_evals_at_iter_200": 425,
+      "note": "Iteration-matching (200) is NOT compute-matching. Only FD (9200) and layerwise (9600) are matched to ~1.04x in loss evaluations. PS costs ~4x more per iteration (36200 in the harness's own loss-eval unit) because it evaluates a parameter-shift Jacobian at a 3-point time stencil each iteration; it is iteration-matched but NOT budget-matched to FD. SPSA at iter 200 is only ~425 loss evals (~20x cheaper than FD) and must be disclosed as such. Layerwise ran 600 Adam steps (200/stage x 3 stages), 3x the stated 200-iteration budget. Honest framing: the comparison is ITERATION-matched, not compute-matched; report per-optimizer eval counts."
+    }
+  },
+  "jacobian_ranks": {
+    "per_L": {
+      "1": {
+        "per_init_ranks": [
+          5,
+          5,
+          5,
+          5,
+          5,
+          5
+        ],
+        "mean_rank": 5.0,
+        "per_init_participation_ratio": [
+          2.089179085068091,
+          2.122978919837855,
+          2.0692464736167033,
+          1.9957798979710213,
+          2.0095089857195045,
+          1.6858133376433448
+        ],
+        "mean_participation_ratio": 1.99541778330942,
+        "jacobian_shape": [
+          150,
+          15
+        ],
+        "n_inits": 6
+      },
+      "2": {
+        "per_init_ranks": [
+          15,
+          15,
+          15,
+          15,
+          15,
+          15
+        ],
+        "mean_rank": 15.0,
+        "per_init_participation_ratio": [
+          3.0612000012108096,
+          3.590182704346734,
+          3.11565705456246,
+          2.9648053210704557,
+          3.787460053538994,
+          4.23645940226904
+        ],
+        "mean_participation_ratio": 3.4592940894997493,
+        "jacobian_shape": [
+          150,
+          30
+        ],
+        "n_inits": 6
+      },
+      "3": {
+        "per_init_ranks": [
+          25,
+          25,
+          25,
+          25,
+          25,
+          25
+        ],
+        "mean_rank": 25.0,
+        "per_init_participation_ratio": [
+          6.777329896517543,
+          5.9636535448939165,
+          4.876839117795099,
+          6.708596710775286,
+          6.944884146348801,
+          5.931986151160427
+        ],
+        "mean_participation_ratio": 6.200548261248511,
+        "jacobian_shape": [
+          150,
+          45
+        ],
+        "n_inits": 6
+      },
+      "4": {
+        "per_init_ranks": [
+          33,
+          32,
+          33,
+          33,
+          33,
+          32
+        ],
+        "mean_rank": 32.666666666666664,
+        "per_init_participation_ratio": [
+          7.019357900207698,
+          7.520219272009499,
+          7.295075812422081,
+          5.827522212559954,
+          5.348601148615257,
+          7.807575529044308
+        ],
+        "mean_participation_ratio": 6.8030586458097995,
+        "jacobian_shape": [
+          150,
+          60
+        ],
+        "n_inits": 6
+      },
+      "5": {
+        "per_init_ranks": [
+          33,
+          33,
+          33,
+          33,
+          33,
+          33
+        ],
+        "mean_rank": 33.0,
+        "per_init_participation_ratio": [
+          8.594002164340623,
+          7.114944252218864,
+          8.174173583924613,
+          7.814659268309408,
+          7.479204638215506,
+          6.90279709163894
+        ],
+        "mean_participation_ratio": 7.679963499774659,
+        "jacobian_shape": [
+          150,
+          75
+        ],
+        "n_inits": 6
+      },
+      "6": {
+        "per_init_ranks": [
+          33,
+          33,
+          33,
+          33,
+          33,
+          33
+        ],
+        "mean_rank": 33.0,
+        "per_init_participation_ratio": [
+          9.313125863380483,
+          7.7764393074264095,
+          9.088106984421477,
+          7.417628882587584,
+          7.456292900429701,
+          8.252904339741116
+        ],
+        "mean_participation_ratio": 8.217416379664462,
+        "jacobian_shape": [
+          150,
+          90
+        ],
+        "n_inits": 6
+      },
+      "7": {
+        "per_init_ranks": [
+          33,
+          33,
+          33,
+          33,
+          33,
+          33
+        ],
+        "mean_rank": 33.0,
+        "per_init_participation_ratio": [
+          8.223814215665806,
+          7.833083105900539,
+          9.9873271252181,
+          9.065811871582303,
+          7.808322104259798,
+          9.75305007602995
+        ],
+        "mean_participation_ratio": 8.778568083109418,
+        "jacobian_shape": [
+          150,
+          105
+        ],
+        "n_inits": 6
+      },
+      "8": {
+        "per_init_ranks": [
+          33,
+          33,
+          33,
+          33,
+          33,
+          33
+        ],
+        "mean_rank": 33.0,
+        "per_init_participation_ratio": [
+          9.892453195147896,
+          8.55594326395313,
+          9.609423329355852,
+          8.93961315070777,
+          9.252051575040696,
+          9.05460274709977
+        ],
+        "mean_participation_ratio": 9.217347876884185,
+        "jacobian_shape": [
+          150,
+          120
+        ],
+        "n_inits": 6
+      }
+    },
+    "saturation_closure": {
+      "saturated_rank": 33,
+      "decomposition": "3 observables x (1 + 2*5) = 3 x 11 = 33",
+      "band": "{0, 0.5, 1, 1.5, 2, 2.5}/t_max (DC + 5 half-integer harmonics)",
+      "caveat": "The 3*(1+2*m) identity is exact only at saturation (L>=5). The intermediate ranks 5/15/25 at L=1/2/3 are NOT a single 3*(1+2*m): the reachable harmonic set grows with depth AND differs across the three observables at low depth. See fourier_ceiling_verification.json for per-depth sets."
+    }
+  },
+  "sha256": "832bf88d292a92e10dd4713397a46fa4bc713a03bfc7c335d0c6bc1727571c49"
+}

@@ -1,0 +1,313 @@
+{
+  "description": "Independent (non-harness-importing) statevector verification of the corrected Fourier ceiling f_max = 2.5/t_max for the 4-qubit QPINN circuit.",
+  "t_max": 3.0,
+  "rz_q1_inertness": {
+    "1": {
+      "max_abs_dZ_when_q1_RZ_deleted": 1.1102230246251565e-15
+    },
+    "3": {
+      "max_abs_dZ_when_q1_RZ_deleted": 9.43689570931383e-16
+    },
+    "5": {
+      "max_abs_dZ_when_q1_RZ_deleted": 1.0130785099704553e-15
+    },
+    "8": {
+      "max_abs_dZ_when_q1_RZ_deleted": 1.5543122344752192e-15
+    },
+    "conclusion": "The qubit-1 RZ time encoding acts on |0> and is inert (global phase only); its encoding frequency 1/t_max is structurally unreachable. Accessible encoding freqs: {1/t_max (q0), 0.5/t_max (q3), 1/t_max (q2)} -> the reachable harmonic grid is multiples of 0.5/t_max, f_max = 2.5/t_max, NOT 3.5/t_max."
+  },
+  "spectrum_ceiling": {
+    "grid": {
+      "period_T": 6.0,
+      "n_grid": 256,
+      "bin_spacing_hz": 0.16666666666666666,
+      "n_draws": 24
+    },
+    "f_ceiling_correct_hz": 0.8333333333333334,
+    "f_ceiling_paper_hz": 1.1666666666666667,
+    "per_L": {
+      "1": {
+        "Z0": {
+          "rel_power_above_2.5_over_tmax": 4.43413995916656e-31,
+          "rel_power_above_3.5_over_tmax": 4.397259318424523e-31,
+          "band_edge_2.5_over_tmax_rel_amplitude": 1.7308315495176338e-33
+        },
+        "Z1": {
+          "rel_power_above_2.5_over_tmax": 6.547142761760585e-31,
+          "rel_power_above_3.5_over_tmax": 6.462619248927023e-31,
+          "band_edge_2.5_over_tmax_rel_amplitude": 3.1627181037050445e-33
+        },
+        "Z2": {
+          "rel_power_above_2.5_over_tmax": 2.612700886731253e-30,
+          "rel_power_above_3.5_over_tmax": 2.562075442437902e-30,
+          "band_edge_2.5_over_tmax_rel_amplitude": 3.802901622348474e-32
+        }
+      },
+      "3": {
+        "Z0": {
+          "rel_power_above_2.5_over_tmax": 8.753870656812496e-31,
+          "rel_power_above_3.5_over_tmax": 8.640882780087767e-31,
+          "band_edge_2.5_over_tmax_rel_amplitude": 8.017668897203519e-33
+        },
+        "Z1": {
+          "rel_power_above_2.5_over_tmax": 1.3206882976347229e-30,
+          "rel_power_above_3.5_over_tmax": 1.3079438659148787e-30,
+          "band_edge_2.5_over_tmax_rel_amplitude": 0.02577846706184625
+        },
+        "Z2": {
+          "rel_power_above_2.5_over_tmax": 1.1254758932949994e-30,
+          "rel_power_above_3.5_over_tmax": 1.1107158017706453e-30,
+          "band_edge_2.5_over_tmax_rel_amplitude": 0.13759039786922686
+        }
+      },
+      "5": {
+        "Z0": {
+          "rel_power_above_2.5_over_tmax": 1.925099630869443e-30,
+          "rel_power_above_3.5_over_tmax": 1.902185710058872e-30,
+          "band_edge_2.5_over_tmax_rel_amplitude": 0.02987421010263896
+        },
+        "Z1": {
+          "rel_power_above_2.5_over_tmax": 1.5112786124580345e-30,
+          "rel_power_above_3.5_over_tmax": 1.4847633923936017e-30,
+          "band_edge_2.5_over_tmax_rel_amplitude": 0.09158207617577457
+        },
+        "Z2": {
+          "rel_power_above_2.5_over_tmax": 1.2851153043487039e-30,
+          "rel_power_above_3.5_over_tmax": 1.2632394666390165e-30,
+          "band_edge_2.5_over_tmax_rel_amplitude": 0.10394208308719854
+        }
+      },
+      "8": {
+        "Z0": {
+          "rel_power_above_2.5_over_tmax": 2.2295113614079076e-30,
+          "rel_power_above_3.5_over_tmax": 2.1870236260567203e-30,
+          "band_edge_2.5_over_tmax_rel_amplitude": 0.11556848062765045
+        },
+        "Z1": {
+          "rel_power_above_2.5_over_tmax": 1.7309588703242678e-30,
+          "rel_power_above_3.5_over_tmax": 1.7081140267373275e-30,
+          "band_edge_2.5_over_tmax_rel_amplitude": 0.07950771999524325
+        },
+        "Z2": {
+          "rel_power_above_2.5_over_tmax": 1.7069065526882558e-30,
+          "rel_power_above_3.5_over_tmax": 1.681035641027378e-30,
+          "band_edge_2.5_over_tmax_rel_amplitude": 0.09484947623066371
+        }
+      }
+    },
+    "conclusion": "On the commensurate full-period grid, relative power above the corrected ceiling 2.5/t_max is at machine precision (~1e-30) at every depth and every observable; there is nothing above 3.5/t_max either. The band edge 2.5/t_max is genuinely populated once depth is sufficient (see per_L band_edge_*_rel_amplitude and the reachable-set block for the depth threshold)."
+  },
+  "reachable_sets": {
+    "rel_threshold": 1e-09,
+    "per_L": {
+      "1": {
+        "reachable_harmonics_units_of_1_over_tmax": {
+          "Z0": [
+            1.0
+          ],
+          "Z1": [
+            1.0
+          ],
+          "Z2": [
+            0.0,
+            2.0
+          ],
+          "union": [
+            0.0,
+            1.0,
+            2.0
+          ]
+        },
+        "n_nonzero_harmonics_union": 2,
+        "naive_3x(1+2m_union)": 15,
+        "measured_jacobian_rank_mean": 5.0
+      },
+      "2": {
+        "reachable_harmonics_units_of_1_over_tmax": {
+          "Z0": [
+            1.0
+          ],
+          "Z1": [
+            0.0,
+            1.0,
+            2.0
+          ],
+          "Z2": [
+            0.0,
+            0.5,
+            1.0,
+            1.5,
+            2.0,
+            2.5
+          ],
+          "union": [
+            0.0,
+            0.5,
+            1.0,
+            1.5,
+            2.0,
+            2.5
+          ]
+        },
+        "n_nonzero_harmonics_union": 5,
+        "naive_3x(1+2m_union)": 33,
+        "measured_jacobian_rank_mean": 15.0
+      },
+      "3": {
+        "reachable_harmonics_units_of_1_over_tmax": {
+          "Z0": [
+            0.0,
+            1.0,
+            2.0
+          ],
+          "Z1": [
+            0.0,
+            0.5,
+            1.0,
+            1.5,
+            2.0,
+            2.5
+          ],
+          "Z2": [
+            0.0,
+            0.5,
+            1.0,
+            1.5,
+            2.0,
+            2.5
+          ],
+          "union": [
+            0.0,
+            0.5,
+            1.0,
+            1.5,
+            2.0,
+            2.5
+          ]
+        },
+        "n_nonzero_harmonics_union": 5,
+        "naive_3x(1+2m_union)": 33,
+        "measured_jacobian_rank_mean": 25.0
+      },
+      "4": {
+        "reachable_harmonics_units_of_1_over_tmax": {
+          "Z0": [
+            0.0,
+            0.5,
+            1.0,
+            1.5,
+            2.0,
+            2.5
+          ],
+          "Z1": [
+            0.0,
+            0.5,
+            1.0,
+            1.5,
+            2.0,
+            2.5
+          ],
+          "Z2": [
+            0.0,
+            0.5,
+            1.0,
+            1.5,
+            2.0,
+            2.5
+          ],
+          "union": [
+            0.0,
+            0.5,
+            1.0,
+            1.5,
+            2.0,
+            2.5
+          ]
+        },
+        "n_nonzero_harmonics_union": 5,
+        "naive_3x(1+2m_union)": 33,
+        "measured_jacobian_rank_mean": 32.667
+      },
+      "5": {
+        "reachable_harmonics_units_of_1_over_tmax": {
+          "Z0": [
+            0.0,
+            0.5,
+            1.0,
+            1.5,
+            2.0,
+            2.5
+          ],
+          "Z1": [
+            0.0,
+            0.5,
+            1.0,
+            1.5,
+            2.0,
+            2.5
+          ],
+          "Z2": [
+            0.0,
+            0.5,
+            1.0,
+            1.5,
+            2.0,
+            2.5
+          ],
+          "union": [
+            0.0,
+            0.5,
+            1.0,
+            1.5,
+            2.0,
+            2.5
+          ]
+        },
+        "n_nonzero_harmonics_union": 5,
+        "naive_3x(1+2m_union)": 33,
+        "measured_jacobian_rank_mean": 33.0
+      },
+      "8": {
+        "reachable_harmonics_units_of_1_over_tmax": {
+          "Z0": [
+            0.0,
+            0.5,
+            1.0,
+            1.5,
+            2.0,
+            2.5
+          ],
+          "Z1": [
+            0.0,
+            0.5,
+            1.0,
+            1.5,
+            2.0,
+            2.5
+          ],
+          "Z2": [
+            0.0,
+            0.5,
+            1.0,
+            1.5,
+            2.0,
+            2.5
+          ],
+          "union": [
+            0.0,
+            0.5,
+            1.0,
+            1.5,
+            2.0,
+            2.5
+          ]
+        },
+        "n_nonzero_harmonics_union": 5,
+        "naive_3x(1+2m_union)": 33,
+        "measured_jacobian_rank_mean": 33.0
+      }
+    },
+    "conclusion": "The reachable harmonic set GROWS with depth up to the cap and differs across observables at low depth: at L=1 only integer harmonics {0,1,2}/t_max are reachable (Z0={1}, Z1={1}, Z2={0,2}) -> rank 5, NOT 3*(1+2*2)=15; the half-integer harmonics from qubit 3 only become reachable through the entangler at L>=2, and the full band {0,.5,1,1.5,2,2.5}/t_max is reached on ALL three observables only at L>=5 (Z0 lags Z1,Z2 at L=3). The neat 3*(1+2*5)=33 identity therefore holds ONLY at saturation (L>=5); the intermediate ranks 5/15/25 reflect the depth- and observable-dependent growth of the reachable set, so 3*(1+2*m_union) does NOT reproduce the whole rank column. The corrected f_max=2.5/t_max ceiling is exact at every depth (no power above it); only the FILLING of the band grows with depth."
+  },
+  "sha256": "3118082734bd496d701c88a7a1ee94cdf60cf8d457ac4b3af8addc1ab3c16721"
+}
