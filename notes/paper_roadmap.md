@@ -1,15 +1,16 @@
 # Paper Roadmap — Status & Branch Map
 
-**Updated:** 2026-05-17 (end of paper-6 + paper-4-v0 sprint)
+**Updated:** 2026-07-21 (paper 1 SUBMITTED to MLST; QUANCOM accepted Jul 20)
 
 | #     | Topic                                              | Branch                              | Status                                 |
 | ----- | -------------------------------------------------- | ----------------------------------- | -------------------------------------- |
-| 1     | Capacity-vs-BP for QRC vs QPINN                    | `paper-1-qst`                       | **Submitted to QST** (ScholarOne)      |
-| 2     | Conditioning argument, fixed-vs-variational        | `paper-2-methods`                   | Draft + κ data; awaiting arXiv push    |
+| 1     | Capacity-vs-BP for QRC vs QPINN                    | `paper-1-qst`                       | **SUBMITTED to IOP MLST** 2026-07-21 (MLST-105811), revised with 10-seed depth sweep + gradient histogram; data pushed to GitHub paper-1-qst. Prior: QST rejection 2026-07-08 (QST-105414), Quantum editorial rejection; arXiv 2604.23743. Frontiers waiver invite (Jul 31 deadline) on hold, decline drafted but unsent |
+| 2     | Conditioning argument, fixed-vs-variational        | `paper-2-methods`                   | **ACCEPTED at QUANCOM 2026** 2026-07-20 (paper #51; Springer proceedings, Scopus/DBLP/EI). **REGISTER BY AUG 3** (hard gate: no registration = dropped from proceedings). **CAMERA-READY AUG 10** (address reviewer comments + Springer format). Trento Sep 1-4, Zoom presentation allowed |
 | 3     | Chaoticity sweep on L96                            | `paper-3-chaoticity`                | **Parked** (low priority)              |
 | 4     | QRC for finance — long-horizon advantage           | `paper-6-hilbert-input` (shared)    | **v0 synthetic done; ready for real data** |
 | ~~5~~ | ~~QRC on classical-scalar input task~~             | `paper-5-quantum-input`             | **Folded into paper 6 as appendix**    |
 | 6     | Hilbert-space-input QRC — long-horizon edge        | **`paper-6-hilbert-input`** ← active | **Confirmed: robust across 3 target seeds** |
+| 7     | Cartography: fair-baseline QRC benchmarking        | `paper-7-cartography`               | **ACCEPTED at IEEE QCE26 WKS75 QuBench** 2026-07-21 (paper 1645, 2x accept + 1 borderline). **HARD DEADLINES MON JUL 27: author registration (Paper ID WKS75-1645) AND final 4-page IEEE PDF + copyright to IEEE CPS.** One author registration covers 2 papers. In-person talk, Toronto Sep 13-18 (schedule by Jul 31). Camera-ready must address reviews (see notes/qce26_wks75_reviews.md) |
 
 ## Standing rules
 
