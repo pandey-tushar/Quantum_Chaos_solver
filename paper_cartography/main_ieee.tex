@@ -1,4 +1,4 @@
-\documentclass[10pt,conference]{IEEEtran}
+﻿\documentclass[10pt,conference]{IEEEtran}
 
 \usepackage[utf8]{inputenc}
 \usepackage[T1]{fontenc}
@@ -78,13 +78,9 @@ simulation at small system size ($q\le 11$) and find that on these tasks it does
 not. Our contribution is not the negative outcome per se but the two controls
 that produce it: a capacity-matched classical model and a tuning-matched
 classical recurrent network, together with a correctness-gated, deterministic
-simulation harness. We state the scope plainly: this is a simulation study at
-sizes that classical hardware can represent exactly ($q \le 11$); the claim is
-``no advantage here, under fair comparison,'' not ``no advantage is possible.''
-
-These two mechanisms admit the cleanest matched controls; other angles of the
-broader fair-comparison cartography are deferred to a companion treatment, to
-which the same methodology applies.
+simulation harness. The scope is stated plainly: at sizes classical hardware
+represents exactly, the claim is ``no advantage here, under fair comparison,''
+not ``no advantage is possible.''
 
 \section{Methods}
 \label{sec:methods}
@@ -102,9 +98,9 @@ causally, and the test segment is touched once, for the final reported number.
 \paragraph{Validation-only tuning, applied equally} All free hyperparameters
 (ridge penalty for every method, quantum evolution time $\tau$, feedback gain
 $k_{\mathrm{fb}}$, and the ESN spectral radius and leak rate) are selected by
-validation error. Importantly, the classical baselines receive the \emph{same}
-tuning budget as the quantum model. This is the single most important control and
-the one most often missing.
+validation error. The classical baselines receive the \emph{same} tuning budget
+as the quantum model: the single most important control and the one most often
+missing.
 
 \paragraph{Matched feature dimension} Where a quantum and a classical reservoir
 are compared, their readout feature dimensions are matched so that the comparison
@@ -212,7 +208,7 @@ $0.2$ & $1.030\pm0.258$ & $0.305\pm0.132$ & $0.297\pm0.125$ & $+2.7\%\pm1.0$ \\
 
 \begin{figure}[t]
 \centering
-\includegraphics[width=0.62\linewidth]{fig_caseI.pdf}
+\includegraphics[width=\linewidth]{fig_caseI.pdf}
 \caption{Case study I. One-step test NRMSE versus coupling $c$ for the correlator
 QRC, \textsc{Poly2}, and their concatenation. The polynomial control sits below
 the QRC at every coupling and the concatenation tracks \textsc{Poly2} almost
@@ -248,11 +244,10 @@ tuning-matched ESN}
 A distinct advantage claim concerns \emph{feedback-driven} QRC, in which the
 measurement outcome at one step modulates the reservoir drive at the next, making
 the effective dynamics path-dependent rather than a fixed function of a finite
-input window. Path-dependence is something a fixed-window polynomial cannot
-reproduce, but it is precisely what a classical recurrent network also provides.
-The honest baseline for a feedback reservoir is therefore not a polynomial but a
-recurrent network, the echo-state network (ESN), and the test is whether
-\emph{quantum} recurrence beats \emph{classical} recurrence at equal tuning.
+input window. Path-dependence is exactly what a classical recurrent network also
+provides, so the honest baseline is the echo-state network (ESN), and the test is
+whether \emph{quantum} recurrence beats \emph{classical} recurrence at equal
+tuning.
 
 We use a nonstationary task built so that recurrence is necessary: a hidden
 two-state Markov process switches the sign of a first-order autoregressive
@@ -345,7 +340,7 @@ efficiently.
 
 \begin{figure}[t]
 \centering
-\includegraphics[width=0.62\linewidth]{fig_caseII.pdf}
+\includegraphics[width=\linewidth]{fig_caseII.pdf}
 \caption{Case study II. One-step test NRMSE at $p_{\mathrm{sw}}=0.05$ (mean $\pm$
 s.d., $10\times10$ seeds). Feedback rescues the open-loop reservoir (rightmost)
 to predictive performance, but the tuning-matched ESN and even a plain linear

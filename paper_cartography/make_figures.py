@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """Generate the two figures for the cartography paper from the verified JSONs.
 Reads results/mv_correlator/ (Case I) and results/feedback_qrc/ (Case II).
 Outputs fig_caseI.pdf and fig_caseII.pdf in this directory."""
@@ -14,7 +14,9 @@ MVC = ROOT / "results" / "mv_correlator"
 FBQ = ROOT / "results" / "feedback_qrc"
 HERE = Path(__file__).parent
 
-plt.rcParams.update({"font.size": 11})
+# Figures are designed at the exact IEEE single-column width (3.5 in) and
+# included at width=\linewidth, so these font sizes are the printed sizes.
+plt.rcParams.update({"font.size": 9})
 
 # Okabe-Ito colorblind-safe palette
 C_CLASSICAL = "#0072B2"  # blue
@@ -35,7 +37,7 @@ ply_s = [summ[f"{c}"]["Poly2_std"]  for c in couplings]
 cat   = [summ[f"{c}"]["cat_mean"]   for c in couplings]
 cat_s = [summ[f"{c}"]["cat_std"]    for c in couplings]
 
-fig, ax = plt.subplots(figsize=(5.2, 3.7))
+fig, ax = plt.subplots(figsize=(3.5, 2.3))
 ax.errorbar(couplings, poly2, yerr=ply_s, fmt="o-", color=C_CLASSICAL, capsize=3,
             label="Poly2 (capacity-matched)", zorder=3)
 ax.errorbar(couplings, qrc, yerr=qrc_s, fmt="s--", color=C_QUANTUM, capsize=3,
@@ -43,15 +45,16 @@ ax.errorbar(couplings, qrc, yerr=qrc_s, fmt="s--", color=C_QUANTUM, capsize=3,
 ax.errorbar(couplings, cat, yerr=cat_s, fmt="^:", color=C_CAT, capsize=3,
             label=r"Poly2 $\oplus$ QRC", zorder=3)
 ax.axhline(1.0, color="black", lw=1.0, ls=":", zorder=5)
-ax.text(0.02, 1.02, "trivial-mean predictor", fontsize=8, color="black",
+ax.text(0.02, 1.02, "trivial-mean predictor", fontsize=7.5, color="black",
          ha="left", va="bottom", zorder=6, transform=ax.get_yaxis_transform())
 ax.set_ylim(top=max(qrc[i] + qrc_s[i] for i in range(len(couplings))) + 0.18)
 ax.set_xlabel("cross-asset coupling $c$")
 ax.set_ylabel("test NRMSE (one-step)")
-ax.set_title("Case I: correlator QRC vs.\npolynomial control", fontsize=11)
 ax.set_xticks(couplings)
-ax.legend(frameon=False, fontsize=9, loc="upper left",
-          bbox_to_anchor=(1.02, 1.0), borderaxespad=0.0)
+# Legend strip ABOVE the axes: outside the plot area, cannot touch any data.
+ax.legend(frameon=False, fontsize=7.5, loc="lower center", ncol=2,
+          bbox_to_anchor=(0.5, 1.01), borderaxespad=0.0,
+          columnspacing=1.0, handletextpad=0.5, handlelength=1.6)
 ax.grid(alpha=0.3, zorder=0)
 fig.tight_layout()
 fig.savefig(HERE / "fig_caseI.pdf", bbox_inches="tight")
@@ -68,25 +71,25 @@ colors = [C_CLASSICAL, C_CLASSICAL, C_CLASSICAL, C_QUANTUM, C_OPENLOOP]
 means = [np.mean(d["nrmse"][m]) for m in order]
 stds = [np.std(d["nrmse"][m]) for m in order]
 
-fig, ax = plt.subplots(figsize=(5.2, 3.7))
+fig, ax = plt.subplots(figsize=(3.5, 2.3))
 bars = ax.bar(range(len(order)), means, yerr=stds, capsize=4,
         color=colors, edgecolor="black", linewidth=0.6, zorder=2)
 ax.axhline(1.0, color="black", lw=1.0, ls=":", zorder=5)
-ax.text(0.5, 1.02, "trivial-mean predictor", fontsize=8, color="black",
+ax.text(0.5, 1.03, "trivial-mean predictor", fontsize=7.5, color="black",
          ha="center", va="bottom", zorder=6,
          transform=ax.get_yaxis_transform())
 ax.set_ylim(0, max(means) + max(stds) + 0.12)
 ax.set_xticks(range(len(order)))
-ax.set_xticklabels(labels, fontsize=8.5, rotation=20, ha="right")
+ax.set_xticklabels(labels, fontsize=8, rotation=20, ha="right")
 ax.set_ylabel("test NRMSE (one-step)")
-ax.set_title("Case II: feedback QRC vs. tuning-matched baselines", fontsize=10.5)
-# Legend distinguishing classical / quantum / open-loop
+# Horizontal legend strip ABOVE the axes: full width, cannot touch any data.
 from matplotlib.patches import Patch
 ax.legend(handles=[Patch(facecolor=C_CLASSICAL, edgecolor="black", label="classical"),
                    Patch(facecolor=C_QUANTUM, edgecolor="black", label="feedback QRC"),
                    Patch(facecolor=C_OPENLOOP, edgecolor="black", label="open-loop QRC")],
-          frameon=False, fontsize=8.5, loc="upper left",
-          bbox_to_anchor=(1.02, 1.0), borderaxespad=0.0)
+          frameon=False, fontsize=7.5, loc="lower center", ncol=3,
+          bbox_to_anchor=(0.5, 1.01), borderaxespad=0.0,
+          columnspacing=0.9, handletextpad=0.4, handlelength=1.2)
 ax.grid(axis="y", alpha=0.3, zorder=0)
 fig.tight_layout()
 fig.savefig(HERE / "fig_caseII.pdf", bbox_inches="tight")
