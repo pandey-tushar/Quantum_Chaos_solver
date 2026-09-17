@@ -104,7 +104,7 @@ class Protocol:
 @dataclass(frozen=True)
 class Sim:
     method: str = "batched"
-    backend: str = "numpy"
+    backend: str = "auto"
     precision: str = "auto"
 
     def as_dict(self):

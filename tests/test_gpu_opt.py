@@ -92,3 +92,29 @@ def test_angle_shapes_are_explicit():
         qrc_features(np.zeros((5, 3)), 2, 2, res)
     assert qrc_features(np.zeros((6, 2, 2)), 2, 2, res).shape[0] == 6                  # dense, one stream
     assert qrc_features(np.zeros((6, 2, 2)), 2, 2, res, streams=True).shape[:2] == (6, 2)  # R_Y, six streams
+
+
+def test_auto_backend_uses_gpu_only_where_it_pays(monkeypatch):
+    from qrc_bench import backend
+    monkeypatch.setattr(backend, "gpu_available", lambda: True)
+    assert backend.resolve_backend("auto", q=8) == "numpy"
+    assert backend.resolve_backend("auto", q=10) == "cupy"
+    assert backend.resolve_backend("numpy", q=14) == "numpy"
+    monkeypatch.setattr(backend, "gpu_available", lambda: False)
+    assert backend.resolve_backend("auto", q=14) == "numpy"
+    with pytest.raises(ValueError):
+        backend.resolve_backend("tpu", q=5)
+
+
+def test_qrc_features_accepts_auto_backend():
+    res = IsingXX(4, 0)
+    ang = np.random.default_rng(0).uniform(-1, 1, (8, 2))
+    assert np.allclose(qrc_features(ang, 2, 2, res, backend="auto"), qrc_features(ang, 2, 2, res), atol=1e-12)
+
+
+def test_experiment_cli_resumes_by_default():
+    from qrc_bench.cli import build_parser
+    base = ["experiment", "--task", "henon", "--kind", "window", "--input-window", "2", "--n-mem", "1"]
+    assert build_parser().parse_args(base).resume is True
+    assert build_parser().parse_args(base + ["--no-resume"]).resume is False
+    assert build_parser().parse_args(base).backend == "auto"

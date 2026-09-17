@@ -88,3 +88,18 @@ def test_cli_experiment_arguments_parse():
                                    "--input-window", "3", "--n-mem", "2", "--trials", "100", "--backend", "cupy",
                                    "--precision", "single", "--out", "results/x"])
     assert (a.kind, a.input_window, a.n_mem, a.trials, a.precision) == ("window", 3, 2, 100, "single")
+
+
+def test_resume_refuses_a_changed_protocol(tmp_path):
+    from dataclasses import replace
+    cmp = Comparison(kind="window", n_series=2, input_window=2, n_mem=1)
+    proto = Protocol(**TINY)
+    storage = f"sqlite:///{tmp_path / 'studies.db'}"
+    tune_model("linear", cmp, proto, Sim(), storage=storage, log=lambda s: None)
+    with pytest.raises(ValueError, match="different"):
+        tune_model("linear", cmp, replace(proto, washout=20), Sim(), storage=storage, log=lambda s: None)
+    with pytest.raises(ValueError, match="different"):
+        tune_model("linear", replace(cmp, input_window=3), proto, Sim(), storage=storage, log=lambda s: None)
+    # more trials with an otherwise identical protocol is a valid resume
+    rec = tune_model("linear", cmp, replace(proto, n_trials=3), Sim(), storage=storage, log=lambda s: None)
+    assert rec["n_trials"] == 3

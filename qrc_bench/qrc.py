@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from qrc_bench.backend import get_xp, to_numpy
+from qrc_bench.backend import get_xp, resolve_backend, to_numpy
 from qrc_bench.encoders import shift_ry
 from qrc_bench.readouts import readout_matrix
 from qrc_bench.simulate import batched, branch, dense
@@ -64,7 +64,8 @@ def qrc_features(angles: np.ndarray, n_in: int, n_mem: int, reservoir, taus=(1.0
     One block per tau, concatenated (two taus = the paper's ZZ_QR2 readout).
     method='batched' is the fast path (numpy or cupy); 'branch' and 'dense' are per-step
     references for tests (reset memory, double precision, numpy, one stream).
-    precision / mem_budget_mb 'auto' follow the backend (see resolve_precision, resolve_budget_mb).
+    backend 'auto' picks the GPU from q >= 10 when one is present; precision / mem_budget_mb 'auto'
+    follow the backend (see resolve_backend, resolve_precision, resolve_budget_mb).
     """
     q = n_in + n_mem
     if reservoir.q != q:
@@ -75,6 +76,7 @@ def qrc_features(angles: np.ndarray, n_in: int, n_mem: int, reservoir, taus=(1.0
         raise ValueError(f"unknown memory mode {memory!r}; expected one of {batched.MEMORY_MODES}")
     if method not in METHODS:
         raise ValueError(f"unknown method {method!r}; expected one of {METHODS}")
+    backend = resolve_backend(backend, q)
     precision = resolve_precision(precision, backend)
     if method != "batched":
         if memory != "reset" or backend != "numpy" or precision != "double" or stacked:

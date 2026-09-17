@@ -71,6 +71,15 @@ def tune_model(model: str, cmp: Comparison, proto: Protocol, sim: Sim, storage: 
     study = optuna.create_study(direction="minimize", sampler=optuna.samplers.TPESampler(seed=proto.sampler_seed),
                                 storage=storage, study_name=model if storage else None,
                                 load_if_exists=storage is not None)
+    fingerprint = json.dumps({"comparison": cmp.as_dict(), "sim": sim.as_dict(),
+                              "protocol": {k: v for k, v in proto.as_dict().items() if k != "n_trials"}},
+                             sort_keys=True, default=list)
+    stored = study.user_attrs.get("fingerprint")
+    if stored is None:
+        study.set_user_attr("fingerprint", fingerprint)
+    elif stored != fingerprint:
+        raise ValueError(f"stored study {model!r} was created with a different comparison, protocol or sim; "
+                         "use a new --out directory")
     t0 = time.perf_counter()
     remaining = proto.n_trials - len([t for t in study.trials if t.state.is_finished()])
     if remaining > 0:

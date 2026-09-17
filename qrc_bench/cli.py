@@ -153,11 +153,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--folds", type=int, default=3)
     p.add_argument("--washout", type=int, default=50)
     p.add_argument("--method", choices=["batched", "branch", "dense"], default="batched")
-    p.add_argument("--backend", choices=["numpy", "cupy"], default="numpy")
+    p.add_argument("--backend", choices=["auto", "numpy", "cupy"], default="auto",
+                   help="auto: GPU from q >= 10 when available")
     p.add_argument("--precision", choices=["auto", "double", "single"], default="auto",
                    help="auto: single on cupy, double on numpy")
     p.add_argument("--out", help="directory for the comparison JSON (and Optuna studies with --resume)")
-    p.add_argument("--resume", action="store_true", help="keep studies in SQLite under --out and resume them")
+    p.add_argument("--no-resume", dest="resume", action="store_false",
+                   help="do not keep Optuna studies in SQLite under --out (default: keep and resume)")
     p.set_defaults(func=cmd_experiment)
 
     p = sub.add_parser("bench", help="time the reservoir simulators per step")
