@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "qrc_bench"
+version = "3.0.0.dev0"
+description = "Fair benchmarking of quantum reservoir computing against tuned classical baselines"
+requires-python = ">=3.10"
+dependencies = ["numpy>=1.26", "scipy>=1.11", "optuna>=4.0"]
+
+[project.optional-dependencies]
+gpu = ["cupy-cuda12x"]
+test = ["pytest>=8"]
+
+[tool.setuptools.packages.find]
+include = ["qrc_bench*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["slow: long regression runs against the paper JSONs (deselect with -m 'not slow')"]
