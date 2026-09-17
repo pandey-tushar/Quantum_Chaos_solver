@@ -1,192 +1,69 @@
-# Quantum Chaos Solver
+# qrc_bench
 
-[![Python](https://img.shields.io/badge/Python-3.9%2B-blue.svg)](https://www.python.org/)
-[![Qiskit](https://img.shields.io/badge/Qiskit-1.3%2B-purple.svg)](https://qiskit.org/)
-[![License](https://img.shields.io/badge/License-Apache%202.0-green.svg)](LICENSE)
-[![Status](https://img.shields.io/badge/Status-arXiv%20Preprint-brightgreen.svg)]()
+Fair benchmarking of quantum reservoir computing (QRC) against classical models that get the
+same tuning budget, the same inputs and the same number of features.
 
-**Fixed-Reservoir vs. Variational Quantum Architectures for Chaotic Dynamics**
+## Papers
 
-> **Key Result (5 matched seeds):** Quantum Reservoir Computing achieves **↓81% train MSE** and **↓93% test MSE** compared to Quantum PINN, with **~52,000× faster training** — attributed to architectural efficiency (fixed reservoir vs. variational optimization), not hardware.
+Each paper's code, data and manuscript live on their own branch.
 
----
+| Branch | Paper | Link |
+|---|---|---|
+| [`paper-1-qst`](../../tree/paper-1-qst) | Fixed-Reservoir vs Variational Quantum Architectures for Chaotic Dynamics: Benchmarking QRC and QPINN on the Lorenz System | [arXiv:2604.23743](https://arxiv.org/abs/2604.23743) |
+| [`paper-2-methods`](../../tree/paper-2-methods) | A Quantum Reservoir Architecture for Chaotic Forecasting and a Test of Whether Its High Dimension Helps (QUANCOM 2026) | [arXiv:2607.07978](https://arxiv.org/abs/2607.07978) |
+| [`paper-7-cartography`](../../tree/paper-7-cartography) | When Classical Baselines Are Tuned as Carefully as the Quantum Model, Does Quantum Reservoir Computing Still Win? (IEEE QCE 2026, QuBench workshop) | [arXiv:2607.09905](https://arxiv.org/abs/2607.09905) |
 
-## 🎯 Quick Results
+Exploratory branches that are not papers: `paper-3-chaoticity`, `paper-5-quantum-input`,
+`paper-6-hilbert-input`.
 
-![Comparison](paper/fig4_comparison.png)
+## What the pipeline does
 
-### Performance Summary (5 matched seeds, Lorenz system)
+1. **Tasks:** `henon` (coupled Hénon maps), `lorenz96`, `switching` / `switching_multi`
+   (AR(1) with a hidden sign regime), `drift`. Any number of series.
+2. **Quantum reservoir:** angle encoding (`per_series`, or `dense_rxrz` with two series per
+   qubit), a fixed random Hamiltonian (`ising_xx`, `xxz`, `xxz_uniform`), Z / ZZ readout.
+   Memory is `reset` (the last *L* inputs re-driven at every step, a fixed-window feature map)
+   or `recurrent` (the memory state carried forward), with optional measurement feedback.
+3. **Classical models:** ESN, random features, Poly2, linear; persistence as a floor.
+4. **Matched comparisons:**
+   - `window`: reset-memory QRC vs random features, Poly2 and linear, all on the same input
+     window, with QRC and random features at the same feature width.
+   - `recurrent`: recurrent-memory QRC vs an ESN of the same width.
+5. **Same tuning for every model:** Optuna TPE with the same trial budget and sampler seed, on
+   held-out tuning seeds and rolling-origin folds, with a standardised ridge readout. Each
+   model's best setting is frozen and evaluated once on fresh data and reservoir seeds.
+6. **Statistics:** paired comparisons at run and data-seed level, bootstrap confidence
+   intervals, Wilcoxon, Holm correction. Every result records trial times, package versions,
+   GPU and git commit.
 
-| Method | Train MSE | Test MSE | Training Time |
-|--------|-----------|----------|---------------|
-| **QRC** (ours) | **17.1 ± 3.7** | **3.2 ± 0.6** | **~0.2 s** |
-| QPINN (baseline) | 91.3 ± 21.9 | 47.9 ± 36.6 | ~2.4 h |
-| Classical ESN† | 0.10 ± 0.00 | 2.08 ± 0.03 | ~1.0 s |
+The simulation is exact (no truncation). It runs batched on the CPU (numpy) or GPU (cupy);
+`auto` uses the GPU from 10 qubits, in single precision.
 
-†N=500 neurons; included for scale context only — classical ESN is not a fair quantum comparison at this qubit count.
-
-**QRC vs QPINN:** ↓81% train MSE · ↓93% test MSE · ~52,000× faster (algorithmic, not hardware)
-
----
-
-## 🚀 What is This?
-
-This project benchmarks two quantum machine learning approaches for solving the **Lorenz chaotic system** across 5 matched random seeds:
-
-1. **Quantum Reservoir Computing (QRC)** — Fixed random reservoir + linear ridge readout
-2. **Quantum Physics-Informed Neural Network (QPINN)** — Variational circuit trained with Adam + physics loss
-
-**Main finding:** The fixed-reservoir paradigm substantially outperforms the variational approach at current qubit scales. Gradient analysis (norms $10^3$–$10^4$ throughout training) rules out barren plateaus as the cause — QPINN's underperformance stems from limited model capacity (32-dimensional Hilbert space) competing with a 45-parameter physics+data loss.
-
-> **Note on task asymmetry:** QRC uses a temporal window of ground-truth states (teacher forcing); QPINN predicts from physics alone. This gives QRC an information advantage and the comparison should be interpreted as an upper bound on QRC performance relative to QPINN.
-
----
-
-## 📊 The Lorenz System
-
-```
-dx/dt = σ(y - x)
-dy/dt = x(ρ - z) - y
-dz/dt = xy - βz
-```
-
-**Parameters:** σ = 10, ρ = 28, β = 8/3 · **IC:** (1, 1, 1)
-
----
-
-## 🏗️ Architecture
-
-### Quantum Reservoir Computing (QRC)
-
-```
-Classical State [x, y, z]
-    ↓
-Angle Encoding (normalize to [-π, π])
-    ↓
-Fixed Random Quantum Circuit (5 qubits, 2 layers)
-  - Fixed random RX, RY, RZ gates (not trained)
-  - Ring CNOT entanglement
-    ↓
-Measure all qubits → 32-dimensional features
-    ↓
-Temporal Window (w=5 steps → 160-dim features)
-    ↓
-Ridge Regression (α=1, closed-form solve)
-    ↓
-Predicted [x, y, z]
-```
-
-### Quantum PINN (QPINN)
-
-```
-Time t
-    ↓
-4-qubit variational circuit (3 layers, 45 params)
-  - RX/RY/RZ + ring CNOT
-    ↓
-Expectation values ⟨Z_q⟩
-    ↓
-Loss = MSE(data) + λ·MSE(ODE residual)   [λ=10, μ=0]
-    ↓
-Adam optimizer (lr=0.01, 200 iterations)
-```
-
----
-
-## 📦 Installation
+## Install
 
 ```bash
-git clone https://github.com/pandey-tushar/Quantum_Chaos_solver.git
-cd Quantum_Chaos_solver
-pip install -r requirements.txt
+pip install -e ".[test]"        # add ".[gpu]" for cupy
 ```
 
----
-
-## 🎮 Reproduce Results
-
-### Multi-seed benchmark (QRC + QPINN, seeds 0–4)
+## Use
 
 ```bash
-python scripts/run_seeds.py --system lorenz --n-seeds 5
+python -m qrc_bench list
+python -m qrc_bench layout --n-series 9 --encoding dense_rxrz --n-mem 3
+python -m qrc_bench experiment --task lorenz96 --task-arg n_series=10 --kind window \
+    --input-window 3 --n-mem 2 --trials 100 --out results/l96_window
+python -m qrc_bench bench --layouts 5:3 6:6 --steps 200
 ```
 
-### QRC only (fast, ~1 second per seed)
+`experiment` resumes an interrupted run from the Optuna studies under `--out`, and refuses to
+resume when the comparison, protocol or simulation settings have changed.
+
+## Test
 
 ```bash
-python scripts/run_seeds.py --system lorenz --n-seeds 5 --qrc-only
+python -m pytest        # includes regressions against the cartography paper's published numbers
 ```
 
-### Classical ESN baseline
+## License
 
-```bash
-python scripts/run_esn_baseline.py
-```
-
-**Expected outputs saved to `results/`.**
-
----
-
-## 🔬 Scientific Contributions
-
-1. **Systematic multi-seed benchmark** — First 5-seed comparison of QRC vs QPINN on the Lorenz system; establishes statistical reliability beyond single-run anecdotes.
-
-2. **Gradient diagnostic** — Gradient norms $10^3$–$10^4$ throughout QPINN training rule out barren plateaus; capacity limitations of the 4-qubit variational circuit are identified as the primary constraint.
-
-3. **Temporal windowing formalisation** — Takens embedding theorem provides theoretical grounding for the window-based feature construction used in QRC.
-
-4. **Classical ESN context** — At 5-qubit scale (32-dim Hilbert space), a classical echo-state network with N=500 neurons achieves lower MSE than both quantum methods; quantum advantage requires qubit counts beyond classical simulability.
-
----
-
-## 📖 Key Parameters
-
-| Config | QRC | QPINN |
-|--------|-----|-------|
-| Qubits | 5 | 4 |
-| Layers | 2 (fixed) | 3 (trained) |
-| Params | 0 (reservoir) | 45 |
-| Window | 5 | — |
-| Readout | Ridge (α=1) | Adam (200 iters) |
-| Loss | MSE | MSE + λ·ODE (λ=10) |
-
----
-
-## 📄 Citation
-
-```bibtex
-@article{pandey2026qrc,
-  author  = {Pandey, Tushar},
-  title   = {Fixed-Reservoir vs. Variational Quantum Architectures for Chaotic Dynamics:
-             Benchmarking {QRC} and {QPINN} on the {Lorenz} System},
-  year    = {2026},
-  note    = {arXiv preprint}
-}
-```
-
----
-
-## 🤝 Contributing
-
-Areas of interest:
-1. **Additional chaotic systems** — Rössler attractor, Lorenz-96
-2. **Larger qubit counts** — where quantum advantage may emerge
-3. **Real quantum hardware** — IBM/IonQ noise effects on QRC
-4. **Windowed QPINN** — variational circuit with temporal window (task-symmetric comparison)
-
----
-
-## 📝 License
-
-Apache License 2.0 — see [LICENSE](LICENSE).
-
----
-
-## 📬 Contact
-
-**Author:** Tushar Pandey  
-**GitHub:** [@pandey-tushar](https://github.com/pandey-tushar)
-
----
-
-**Last Updated:** April 2026 · **Status:** arXiv preprint in preparation
+Apache 2.0 (see `LICENSE`).
