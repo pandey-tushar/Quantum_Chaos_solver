@@ -41,7 +41,7 @@ def test_q_cap():
 
 
 def test_registry_names():
-    assert registry.names("reservoir") == ["ising_xx"]
+    assert registry.names("reservoir") == ["ising_xx", "xxz", "xxz_uniform"]
     assert {"henon", "switching", "drift"} <= set(registry.names("task"))
     assert {"esn", "poly2", "linear"} <= set(registry.names("baseline"))
 
