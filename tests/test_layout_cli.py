@@ -26,18 +26,24 @@ def test_match_features_picks_smallest_memory():
 
 
 def test_match_features_unreachable_within_cap():
-    # Case I Poly2 (135) is out of reach: q = 11 gives 132
+    # Case I Poly2 (135) is out of reach at q <= 11: q = 11 gives 132
     with pytest.raises(ValueError, match="Poly2 width 135"):
-        derive(5, mem_rule="match-features", n_taus=2, poly2_window=3)
+        derive(5, mem_rule="match-features", n_taus=2, poly2_window=3, q_max=11)
 
 
 def test_ratio_rule():
     assert derive(4, mem_rule="ratio", mem_ratio=0.5).n_mem == 2
 
 
-def test_q_cap():
+def test_no_default_q_cap_but_optional_guard():
+    assert derive(9, n_mem=6).q == 15
     with pytest.raises(ValueError, match="q_max"):
-        derive(9, n_mem=3)
+        derive(9, n_mem=3, q_max=11)
+
+
+def test_match_features_without_cap_reaches_poly2_width():
+    lay = derive(5, mem_rule="match-features", n_taus=2, poly2_window=3)
+    assert (lay.q, lay.qrc_features) == (12, 156)
 
 
 def test_registry_names():

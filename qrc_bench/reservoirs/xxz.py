@@ -33,7 +33,7 @@ def xxz_hamiltonian(q: int, couplings: dict, delta: float, fields: np.ndarray, h
     idx = np.arange(dim)
     bits = (idx[:, None] >> np.arange(q - 1, -1, -1)) & 1          # (dim, q)
     z = 1.0 - 2.0 * bits                                            # Z eigenvalues
-    H = np.zeros((dim, dim), dtype=complex)
+    H = np.zeros((dim, dim))
     diag = z @ np.asarray(fields, dtype=float)
     for (i, j), J in couplings.items():
         diag += delta * J * z[:, i] * z[:, j]

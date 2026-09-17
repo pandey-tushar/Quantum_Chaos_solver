@@ -1,49 +1,90 @@
+"""The fair-tuning protocol: one frozen setting per model, tuned on held-out seeds and folds,
+matched inputs and feature width, then evaluated once on fresh seeds."""
+import json
+
 import numpy as np
+import pytest
 
 from qrc_bench.cli import build_parser
-from qrc_bench.evaluate import ridge_forecast, test_nrmse, val_nrmse
-from qrc_bench.tasks.ar import regime_switching
-from qrc_bench.tuning import Context, tune_all, tune_model
+from qrc_bench.tuning import Comparison, Protocol, Sim, evaluate_frozen, run_comparison, tune_model
+
+TINY = dict(task="henon", task_kwargs={"n_series": 2}, n_steps=160, n_trials=2, n_folds=2, washout=10,
+            tune_data_seeds=(100, 101), tune_res_seeds=(100,), eval_data_seeds=(0, 1), eval_res_seeds=(0, 1))
 
 
-def _X():
-    return regime_switching(160, seed=0)
+def test_comparison_derives_matched_width():
+    cmp = Comparison(kind="window", n_series=2, input_window=3, n_mem=2, readout="ZZ", n_taus=2)
+    assert (cmp.n_in, cmp.q, cmp.width) == (2, 4, 2 * (4 + 6))
+    assert cmp.default_models() == ("qrc", "random_features", "poly2", "linear")
+    rec = Comparison(kind="recurrent", n_series=2, input_window=3, n_mem=2)
+    assert "esn" in rec.default_models()
 
 
-def test_fixed_alpha_scores_match_ridge_forecast():
-    X = _X()
-    F = np.hstack([X, X ** 2])
-    assert np.isclose(test_nrmse(F, X, 1, 1e-2), ridge_forecast(F, X, 1, alphas=(1e-2,)))
-    assert np.isfinite(val_nrmse(F, X, 1, 1e-2))
+def test_window_comparison_rejects_recurrent_models():
+    cmp = Comparison(kind="window", n_series=2, input_window=3, n_mem=2)
+    with pytest.raises(ValueError, match="esn"):
+        cmp.check_models(["qrc", "esn"])
 
 
-def test_same_protocol_for_every_model():
-    ctx = Context(_X(), res_seed=0, window=2, lag_window=2, n_mem_range=(1, 2), esn_units=6)
-    rec = tune_all(["qrc", "esn", "poly2", "linear"], ctx, n_trials=3, sampler_seed=1, log=lambda s: None)
-    assert {r["n_trials"] for r in rec["models"].values()} == {3}
-    assert {r["sampler_seed"] for r in rec["models"].values()} == {1}
-    for r in rec["models"].values():
-        assert "alpha" in r["search_space"]
-        assert np.isfinite(r["val_nrmse"]) and np.isfinite(r["test_nrmse"])
-    assert rec["models"]["poly2"]["width"] == 5          # 2 lags -> 2 + 3
-    assert rec["models"]["esn"]["best_params"]["n_res"] == 6
+def test_protocol_rejects_overlapping_tuning_and_evaluation_seeds():
+    with pytest.raises(ValueError, match="overlap"):
+        Protocol(task="henon", tune_data_seeds=(0, 1), eval_data_seeds=(1, 2))
+    with pytest.raises(ValueError, match="overlap"):
+        Protocol(task="henon", tune_res_seeds=(3,), eval_res_seeds=(3,))
 
 
-def test_qrc_respects_q_cap_and_open_loop():
-    ctx = Context(_X(), res_seed=0, n_mem_range=(1, 20), feedback=False, q_max=3)
-    rec = tune_model("qrc", ctx, n_trials=2, log=lambda s: None)
-    assert rec["search_space"]["n_mem"]["attributes"]["high"] == 2
-    assert rec["best_params"]["k_fb"] == 0.0
+@pytest.mark.parametrize("model", ["qrc", "random_features", "poly2"])
+def test_tuning_averages_over_tuning_seeds_and_records_time(model):
+    cmp = Comparison(kind="window", n_series=2, input_window=2, n_mem=1)
+    proto = Protocol(**TINY)
+    rec = tune_model(model, cmp, proto, Sim(), log=lambda s: None)
+    assert rec["n_trials"] == 2 and "alpha" in rec["search_space"]
+    assert len(rec["trial_seconds"]) == 2 and all(t > 0 for t in rec["trial_seconds"])
+    n_runs = 2 if model == "poly2" else 2 * 1          # poly2 has no reservoir seed
+    assert len(rec["best_val_per_run"]) == n_runs
+    assert np.isclose(rec["best_val"], np.mean(list(rec["best_val_per_run"].values())))
 
 
-def test_enqueue_defaults_runs_defaults_first():
-    ctx = Context(_X(), res_seed=0, esn_units=5)
-    rec = tune_model("esn", ctx, n_trials=1, enqueue_defaults=True, log=lambda s: None)
-    assert rec["best_params"]["sr"] == 0.9 and rec["best_alpha"] == 1e-3
+def test_frozen_evaluation_uses_only_eval_seeds_and_best_params():
+    cmp = Comparison(kind="window", n_series=2, input_window=2, n_mem=1)
+    proto = Protocol(**TINY)
+    rec = tune_model("qrc", cmp, proto, Sim(), log=lambda s: None)
+    ev = evaluate_frozen("qrc", rec["best_params"], rec["best_alpha"], cmp, proto, Sim())
+    assert [(r["data_seed"], r["res_seed"]) for r in ev] == [(0, 0), (0, 1), (1, 0), (1, 1)]
+    assert all(r["width"] == cmp.width for r in ev)
+    assert all(np.isfinite(r["test_nrmse"]) for r in ev)
 
 
-def test_cli_tune_arguments_parse():
-    a = build_parser().parse_args(["tune", "--task", "switching", "--task-arg", "p_switch=0.05",
-                                   "--data-seeds", "0", "1", "--trials", "100", "--window", "5"])
-    assert (a.trials, a.data_seeds, a.task_arg, a.models) == (100, [0, 1], ["p_switch=0.05"],
-                                                                ["qrc", "esn", "poly2", "linear"])
+@pytest.mark.parametrize("kind,models", [("window", ["qrc", "random_features", "poly2", "linear"]),
+                                         ("recurrent", ["qrc", "esn", "linear"])])
+def test_run_comparison_same_budget_matched_width_and_stats(tmp_path, kind, models):
+    cmp = Comparison(kind=kind, n_series=2, input_window=2, n_mem=1)
+    proto = Protocol(**TINY)
+    out = run_comparison(cmp, proto, Sim(), models=models, out_dir=tmp_path, log=lambda s: None)
+    tunings = [out["models"][m]["tuning"] for m in models]
+    assert {t["n_trials"] for t in tunings} == {2}
+    assert {t["sampler_seed"] for t in tunings} == {proto.sampler_seed}
+    other = "random_features" if kind == "window" else "esn"
+    assert out["models"]["qrc"]["eval"][0]["width"] == out["models"][other]["eval"][0]["width"] == cmp.width
+    assert set(out["stats"]) == {f"qrc_vs_{m}" for m in models if m != "qrc"}
+    assert "p_holm_cluster" in out["stats"][f"qrc_vs_{models[1]}"]
+    assert len(out["persistence"]) == 2
+    assert out["environment"]["numpy"] and "git_commit" in out["environment"]
+    saved = json.loads((tmp_path / f"comparison_{kind}.json").read_text())
+    assert saved["protocol"]["n_trials"] == 2
+
+
+def test_resume_does_not_rerun_finished_trials(tmp_path):
+    cmp = Comparison(kind="window", n_series=2, input_window=2, n_mem=1)
+    proto = Protocol(**TINY)
+    storage = f"sqlite:///{tmp_path / 'studies.db'}"
+    a = tune_model("linear", cmp, proto, Sim(), storage=storage, log=lambda s: None)
+    b = tune_model("linear", cmp, proto, Sim(), storage=storage, log=lambda s: None)
+    assert a["n_trials"] == b["n_trials"] == 2 and a["best_val"] == b["best_val"]
+
+
+def test_cli_experiment_arguments_parse():
+    a = build_parser().parse_args(["experiment", "--task", "henon", "--task-arg", "n_series=9", "--kind", "window",
+                                   "--input-window", "3", "--n-mem", "2", "--trials", "100", "--backend", "cupy",
+                                   "--precision", "single", "--out", "results/x"])
+    assert (a.kind, a.input_window, a.n_mem, a.trials, a.precision) == ("window", 3, 2, 100, "single")

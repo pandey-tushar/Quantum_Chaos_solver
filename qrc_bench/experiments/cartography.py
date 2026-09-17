@@ -29,7 +29,7 @@ def _argmin_val(candidates, Y, h):
 
 def case_i_pair(coupling: float, data_seed: int, res_seed: int, n_steps: int = 800,
                 n_series: int = 5, n_mem: int = 3, obs_noise: float = 0.1, horizon: int = 1,
-                scales=(np.pi / 4, np.pi / 2), taus=(1.0, 2.0), method: str = "branch",
+                scales=(np.pi / 4, np.pi / 2), taus=(1.0, 2.0), method: str = "batched",
                 backend: str = "numpy") -> dict:
     """Case I concat ablation: QRC (ZZ or ZZ_QR2, scale, tau chosen on validation), Poly2, Poly2 + QRC."""
     X = coupled_henon(n_steps, data_seed, n_series=n_series, coupling=coupling, obs_noise=obs_noise)
@@ -60,7 +60,7 @@ def case_i_pair(coupling: float, data_seed: int, res_seed: int, n_steps: int = 8
 def case_ii_pair(data_seed: int, res_seed: int, p_switch: float = 0.05, n_steps: int = 1200,
                  n_mem: int = 4, window: int = 5, horizon: int = 1, k_fbs=(0.5, 1.0, 2.0),
                  taus=(1.0, 2.0), esn_srs=(0.7, 0.9, 0.99), esn_leaks=(0.2, 0.5, 0.9),
-                 method: str = "dense", backend: str = "numpy") -> dict:
+                 method: str = "batched", backend: str = "numpy") -> dict:
     """Case II narrow tuning: feedback QRC (tau, k_fb), open loop (tau), ESN (sr, leak), Poly2, linear."""
     X = regime_switching(n_steps, data_seed, p_switch=p_switch)
     ang = angle_ry(X, 1.0)

@@ -28,10 +28,16 @@ def sign_tables(q: int):
 
 
 def product_state(angles, xp=np):
-    """R_Y(angle) |0> on each qubit: kron over [cos(a/2), sin(a/2)]."""
+    """Per qubit R_Y(a)|0> = [cos(a/2), sin(a/2)] for angles (n,), or R_Z(b) R_Y(a)|0> =
+    [e^{-ib/2} cos(a/2), e^{ib/2} sin(a/2)] for angles (n, 2); kron over qubits."""
+    angles = np.asarray(angles, dtype=float)
     psi = xp.ones(1, dtype=xp.complex128)
     for a in angles:
-        psi = xp.kron(psi, xp.asarray([np.cos(a / 2.0), np.sin(a / 2.0)], dtype=xp.complex128))
+        if np.ndim(a) == 0:
+            pair = [np.cos(a / 2.0), np.sin(a / 2.0)]
+        else:
+            pair = [np.cos(a[0] / 2.0) * np.exp(-0.5j * a[1]), np.sin(a[0] / 2.0) * np.exp(0.5j * a[1])]
+        psi = xp.kron(psi, xp.asarray(pair, dtype=xp.complex128))
     return psi
 
 

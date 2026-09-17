@@ -5,7 +5,6 @@ import numpy as np
 
 from qrc_bench.registry import register
 from qrc_bench.reservoirs.base import Reservoir
-from qrc_bench.simulate.ops import X, Z, pauli_string
 
 
 @register("reservoir", "ising_xx")
@@ -25,12 +24,14 @@ class IsingXX(Reservoir):
         return {"v": trial.suggest_float("v", 0.1, 10.0, log=True)}
 
     def hamiltonian(self) -> np.ndarray:
+        """Built in the computational basis: X_i X_j flips bits i and j; Z_i is diagonal."""
         q = self.q
         rng = np.random.default_rng(self.seed_offset + self.seed)
-        H = np.zeros((2 ** q, 2 ** q), dtype=complex)
+        idx = np.arange(2 ** q)
+        bits = (idx[:, None] >> np.arange(q - 1, -1, -1)) & 1
+        H = np.zeros((2 ** q, 2 ** q))
         for i in range(q):
             for j in range(i + 1, q):
-                H += rng.uniform(0, 1) * pauli_string({i: X, j: X}, q)
-        for i in range(q):
-            H += self.v * pauli_string({i: Z}, q)
+                H[idx ^ ((1 << (q - 1 - i)) | (1 << (q - 1 - j))), idx] += rng.uniform(0, 1)
+        H[idx, idx] += self.v * (1.0 - 2.0 * bits).sum(axis=1)
         return H

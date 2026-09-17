@@ -31,6 +31,21 @@ def poly2_features(X: np.ndarray, window: int = 3) -> np.ndarray:
     return np.array(rows)
 
 
+@register("baseline", "random_features")
+def random_features(X: np.ndarray, width: int, seed: int, window: int = 1, scale: float = 1.0,
+                    bias_scale: float = 0.5) -> np.ndarray:
+    """Fixed random nonlinear features of the input window: tanh(A z_t + b).
+
+    z_t stacks the last ``window`` steps (n = n_series * window values); A ~ N(0, scale^2 / n),
+    b ~ U(-bias_scale, bias_scale). The same-window, same-width control for a reset-memory QRC.
+    """
+    Z = windowed(X, window)
+    rng = np.random.default_rng(seed)
+    A = rng.standard_normal((width, Z.shape[1])) * (scale / np.sqrt(Z.shape[1]))
+    b = rng.uniform(-bias_scale, bias_scale, width)
+    return np.tanh(Z @ A.T + b)
+
+
 @register("baseline", "esn")
 def esn_features(X: np.ndarray, n_res: int, seed: int, sr: float = 0.9, leak: float = 0.3,
                  in_scale: float = 0.5, density: float = 0.1) -> np.ndarray:

@@ -22,6 +22,15 @@ def test_sign_tables_match_explicit_operators():
     assert np.allclose(zz_signs @ diag, zz_explicit, atol=1e-12)
 
 
+def test_ising_xx_matches_pauli_strings():
+    from qrc_bench.simulate.ops import X
+    q, seed = 4, 3
+    rng = np.random.default_rng(10_000 + seed)
+    ref = sum(rng.uniform(0, 1) * pauli_string({i: X, j: X}, q) for i in range(q) for j in range(i + 1, q))
+    ref = ref + sum(0.7 * pauli_string({i: Z}, q) for i in range(q))
+    assert np.allclose(IsingXX(q, seed, v=0.7).hamiltonian(), ref)
+
+
 def test_ising_xx_is_hermitian_and_unitary():
     res = IsingXX(4, seed=3)
     H = res.hamiltonian()
