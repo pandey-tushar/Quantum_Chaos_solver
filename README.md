@@ -13,8 +13,7 @@ Each paper's code, data and manuscript live on their own branch.
 | [`paper-2-methods`](../../tree/paper-2-methods) | A Quantum Reservoir Architecture for Chaotic Forecasting and a Test of Whether Its High Dimension Helps (QUANCOM 2026) | [arXiv:2607.07978](https://arxiv.org/abs/2607.07978) |
 | [`paper-7-cartography`](../../tree/paper-7-cartography) | When Classical Baselines Are Tuned as Carefully as the Quantum Model, Does Quantum Reservoir Computing Still Win? (IEEE QCE 2026, QuBench workshop) | [arXiv:2607.09905](https://arxiv.org/abs/2607.09905) |
 
-Exploratory branches that are not papers: `paper-3-chaoticity`, `paper-5-quantum-input`,
-`paper-6-hilbert-input`.
+Exploratory branches that are not papers: `paper-3-chaoticity`, `paper-5-quantum-input`.
 
 ## What the pipeline does
 
