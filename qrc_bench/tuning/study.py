@@ -1,8 +1,13 @@
 """Tune every model under one protocol, freeze its best setting, evaluate once on fresh seeds.
 
-Shared by every model: trial budget, TPE sampler and seed, tuning seeds, rolling-origin folds,
-washout, feature standardisation, objective (mean validation NRMSE over tuning data seeds x
-tuning reservoir seeds x folds) and ridge alpha range. Evaluation seeds never enter tuning.
+Shared by every model: TPE sampler and seed, tuning seeds, rolling-origin folds, washout, feature
+standardisation, objective (mean validation NRMSE over tuning data seeds x tuning reservoir seeds x
+folds) and ridge alpha range. Evaluation seeds never enter tuning.
+
+The trial budget is per model, not shared: an equal count would search a one-knob model exhaustively
+and a five-knob model sparsely, so each model gets ``trials_per_dim`` trials per knob it tunes and
+keeps going while it is still finding new bests. ``best_so_far`` records the convergence curve, so
+"tuned until tuning stopped helping" is evidence rather than an assumption.
 """
 from __future__ import annotations
 
@@ -20,6 +25,47 @@ from qrc_bench import registry
 from qrc_bench.evaluate import fold_bounds, persistence_test, score_test, val_nrmse_folds
 from qrc_bench.stats import holm, paired_comparison
 from qrc_bench.tuning.spaces import ALPHA_RANGE, MODELS, Comparison, Protocol, Sim, build_streams, suggest_alpha
+
+
+BUDGET_KEYS = ("n_trials", "trials_per_dim", "patience", "max_trials")
+
+
+def _complete(study):
+    return [t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE]
+
+
+def _run_budget(study, objective, proto: Protocol) -> dict:
+    """Trials for one model. A fixed ``n_trials`` gives every model the same budget, which
+    favours the smallest search space; the default rule instead gives each model
+    ``trials_per_dim`` trials per tuned knob and keeps going while it is still improving.
+    """
+    if proto.n_trials is not None:
+        remaining = proto.n_trials - len([t for t in study.trials if t.state.is_finished()])
+        if remaining > 0:
+            study.optimize(objective, n_trials=remaining)
+        n_dims = len(_complete(study)[0].distributions) if _complete(study) else 0
+        return {"rule": "fixed", "n_dims": n_dims, "floor": proto.n_trials,
+                "patience": None, "max_trials": proto.n_trials, "stopped": "fixed"}
+
+    if not _complete(study):                       # one trial reveals the search space
+        study.optimize(objective, n_trials=1)
+    n_dims = len(_complete(study)[0].distributions)
+    floor = min(proto.trials_per_dim * n_dims, proto.max_trials)
+    state = {"stopped": "max_trials"}
+
+    def stop_when_converged(st, trial):
+        done = len(_complete(st))
+        if done >= proto.max_trials:
+            st.stop()
+        elif done >= floor and trial.number - st.best_trial.number >= proto.patience:
+            state["stopped"] = "patience"
+            st.stop()
+
+    remaining = proto.max_trials - len([t for t in study.trials if t.state.is_finished()])
+    if remaining > 0:
+        study.optimize(objective, n_trials=remaining, callbacks=[stop_when_converged])
+    return {"rule": "per_dim", "n_dims": n_dims, "floor": floor, "trials_per_dim": proto.trials_per_dim,
+            "patience": proto.patience, "max_trials": proto.max_trials, "stopped": state["stopped"]}
 
 
 def _series(proto: Protocol, data_seed: int):
@@ -72,7 +118,7 @@ def tune_model(model: str, cmp: Comparison, proto: Protocol, sim: Sim, storage: 
                                 storage=storage, study_name=model if storage else None,
                                 load_if_exists=storage is not None)
     fingerprint = json.dumps({"comparison": cmp.as_dict(), "sim": sim.as_dict(),
-                              "protocol": {k: v for k, v in proto.as_dict().items() if k != "n_trials"}},
+                              "protocol": {k: v for k, v in proto.as_dict().items() if k not in BUDGET_KEYS}},
                              sort_keys=True, default=list)
     stored = study.user_attrs.get("fingerprint")
     if stored is None:
@@ -81,20 +127,21 @@ def tune_model(model: str, cmp: Comparison, proto: Protocol, sim: Sim, storage: 
         raise ValueError(f"stored study {model!r} was created with a different comparison, protocol or sim; "
                          "use a new --out directory")
     t0 = time.perf_counter()
-    remaining = proto.n_trials - len([t for t in study.trials if t.state.is_finished()])
-    if remaining > 0:
-        study.optimize(objective, n_trials=remaining)
+    budget = _run_budget(study, objective, proto)
     done = [t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE]
     best = study.best_trial
     space = {}
     for t in study.trials:
         space.update({k: json.loads(distribution_to_json(d)) for k, d in t.distributions.items()})
     rec = {"model": model, "n_trials": len(done), "sampler": "TPE", "sampler_seed": proto.sampler_seed,
-           "search_space": space, "best_params": best.user_attrs["params"], "best_alpha": best.params["alpha"],
+           "search_space": space, "budget": budget,
+           "best_params": best.user_attrs["params"], "best_alpha": best.params["alpha"],
            "best_trial": best.number, "best_val": best.value, "best_val_per_run": best.user_attrs["per_run"],
            "trial_values": [t.value for t in done], "trial_seconds": [t.user_attrs["seconds"] for t in done],
+           "best_so_far": np.minimum.accumulate([t.value for t in done]).tolist(),
            "study_seconds": round(time.perf_counter() - t0, 3)}
-    log(f"  tuned {model:15s} val {best.value:.4f}  trials {rec['n_trials']}  "
+    log(f"  tuned {model:15s} val {best.value:.4f}  trials {rec['n_trials']} "
+        f"({budget['n_dims']}d, floor {budget['floor']}, stopped on {budget['stopped']})  "
         f"[{sum(rec['trial_seconds']):.0f}s in trials]")
     return rec
 
@@ -167,8 +214,11 @@ def run_comparison(cmp: Comparison, proto: Protocol, sim: Sim, models=None, out_
         if m == "qrc":
             continue
         other = {(r["data_seed"], r["res_seed"]): r["test_nrmse"] for r in result["models"][m]["eval"]}
-        stats[f"qrc_vs_{m}"] = paired_comparison([r["test_nrmse"] for r in q_rows], [other[k] for k in key],
-                                                 [k[0] for k in key])
+        s = paired_comparison([r["test_nrmse"] for r in q_rows], [other[k] for k in key], [k[0] for k in key])
+        # a model without a reservoir seed repeats one value across the reservoir seeds, so its runs
+        # are not independent: only the cluster-level statistics are valid for that comparison
+        s["run_level_independent"] = MODELS[m].uses_seed and MODELS["qrc"].uses_seed
+        stats[f"qrc_vs_{m}"] = s
     if stats:
         names = list(stats)
         for label, field_ in (("p_holm_cluster", "p_t_cluster"), ("p_holm_run", "p_t_run")):
@@ -184,6 +234,7 @@ def run_comparison(cmp: Comparison, proto: Protocol, sim: Sim, models=None, out_
     if out_dir:
         (out_dir / f"comparison_{cmp.kind}.json").write_text(json.dumps(result, indent=2))
     for n, s in stats.items():
+        note = "" if s["run_level_independent"] else "  [run-level stats not independent]"
         log(f"  {n:22s} mean {s['mean_a']:.4f} vs {s['mean_b']:.4f}  diff {s['mean_diff']:+.4f}  "
-            f"wins {s['wins_a']}/{s['n_runs']}  p_cluster(Holm) {s['p_holm_cluster']:.3g}")
+            f"seed wins {s['cluster_wins_a']}/{s['n_clusters']}  p_cluster(Holm) {s['p_holm_cluster']:.3g}{note}")
     return result

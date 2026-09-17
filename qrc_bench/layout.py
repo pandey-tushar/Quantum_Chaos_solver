@@ -8,7 +8,15 @@ from qrc_bench.encoders import ENCODINGS, n_encoded_qubits
 from qrc_bench.readouts import readout_width
 
 Q_MAX = None        # no default cap; pass q_max to guard against runs that are too large
+Q_MIN = 10          # experiments run at q > 9; smaller layouts are reproductions and tests
 MEM_RULES = ("fixed", "ratio", "match-features")
+
+
+def check_q_min(q: int, q_min: int | None = Q_MIN) -> None:
+    """Refuse an experiment below ``q_min``. ``derive`` still describes any layout."""
+    if q_min is not None and q < q_min:
+        raise ValueError(f"experiment layout has q = {q} < q_min = {q_min}; "
+                         "pass --q-min to run a smaller layout")
 
 
 @dataclass(frozen=True)

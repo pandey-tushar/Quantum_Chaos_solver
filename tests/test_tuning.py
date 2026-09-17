@@ -103,3 +103,47 @@ def test_resume_refuses_a_changed_protocol(tmp_path):
     # more trials with an otherwise identical protocol is a valid resume
     rec = tune_model("linear", cmp, replace(proto, n_trials=3), Sim(), storage=storage, log=lambda s: None)
     assert rec["n_trials"] == 3
+
+
+PER_DIM = {k: v for k, v in TINY.items() if k != "n_trials"}
+
+
+def test_budget_scales_with_search_dimension():
+    """Equal trials across spaces of different size favours the small space, so the floor
+    budget is trials_per_dim x the model's own number of tuned knobs (alpha included)."""
+    cmp = Comparison(kind="window", n_series=2, input_window=2, n_mem=1, reservoir="xxz")
+    proto = Protocol(**PER_DIM, trials_per_dim=2, patience=1, max_trials=12)
+    qrc = tune_model("qrc", cmp, proto, Sim(), log=lambda s: None)
+    p2 = tune_model("poly2", cmp, proto, Sim(), log=lambda s: None)
+    assert (qrc["budget"]["n_dims"], qrc["budget"]["floor"]) == (5, 10)     # tau, scale, delta, W, alpha
+    assert (p2["budget"]["n_dims"], p2["budget"]["floor"]) == (1, 2)        # alpha only
+    for rec in (qrc, p2):
+        assert rec["budget"]["floor"] <= rec["n_trials"] <= proto.max_trials
+        assert rec["budget"]["rule"] == "per_dim" and rec["budget"]["stopped"] in ("patience", "max_trials")
+
+
+def test_fixed_trial_budget_is_still_available_for_smoke_runs():
+    cmp = Comparison(kind="window", n_series=2, input_window=2, n_mem=1)
+    rec = tune_model("linear", cmp, Protocol(**TINY), Sim(), log=lambda s: None)
+    assert rec["n_trials"] == 2 and rec["budget"]["rule"] == "fixed"
+
+
+def test_budget_never_exceeds_max_trials():
+    cmp = Comparison(kind="window", n_series=2, input_window=2, n_mem=1)
+    proto = Protocol(**PER_DIM, trials_per_dim=50, patience=50, max_trials=3)
+    rec = tune_model("linear", cmp, proto, Sim(), log=lambda s: None)
+    assert rec["n_trials"] == 3 and rec["budget"]["stopped"] == "max_trials"
+
+
+def test_run_level_stats_flagged_when_a_model_is_deterministic():
+    cmp = Comparison(kind="window", n_series=2, input_window=2, n_mem=1)
+    out = run_comparison(cmp, Protocol(**TINY), Sim(), models=["qrc", "random_features", "poly2"],
+                         log=lambda s: None)
+    assert out["stats"]["qrc_vs_poly2"]["run_level_independent"] is False
+    assert out["stats"]["qrc_vs_random_features"]["run_level_independent"] is True
+
+
+def test_cli_budget_arguments_parse():
+    a = build_parser().parse_args(["experiment", "--task", "henon", "--kind", "window",
+                                   "--input-window", "2", "--n-mem", "8"])
+    assert (a.trials, a.trials_per_dim, a.max_trials, a.patience) == (None, 25, 300, 50)

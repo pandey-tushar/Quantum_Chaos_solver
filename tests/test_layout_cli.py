@@ -55,3 +55,20 @@ def test_registry_names():
 def test_cli_layout(capsys):
     main(["layout", "--n-series", "5", "--n-mem", "3", "--n-taus", "2", "--poly2-window", "3"])
     assert '"qrc_features": 72' in capsys.readouterr().out
+
+
+def test_q_min_guards_experiments_but_not_layout():
+    from qrc_bench.layout import Q_MIN, check_q_min
+
+    assert Q_MIN == 10                       # experiments run at q > 9
+    check_q_min(12)                          # the first experiment's layout
+    with pytest.raises(ValueError, match="q_min"):
+        check_q_min(8)                       # the cartography Case I layout
+    check_q_min(8, q_min=None)               # reproductions and tests opt out
+    assert derive(5, n_mem=3).q == 8         # derive still describes small layouts
+
+
+def test_cli_experiment_refuses_a_small_layout():
+    with pytest.raises(ValueError, match="q_min"):
+        main(["experiment", "--task", "lorenz96", "--task-arg", "n_series=2", "--kind", "window",
+              "--input-window", "2", "--n-mem", "2", "--trials", "1"])

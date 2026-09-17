@@ -28,12 +28,16 @@ Exploratory branches that are not papers: `paper-3-chaoticity`, `paper-5-quantum
    - `window`: reset-memory QRC vs random features, Poly2 and linear, all on the same input
      window, with QRC and random features at the same feature width.
    - `recurrent`: recurrent-memory QRC vs an ESN of the same width.
-5. **Same tuning for every model:** Optuna TPE with the same trial budget and sampler seed, on
-   held-out tuning seeds and rolling-origin folds, with a standardised ridge readout. Each
-   model's best setting is frozen and evaluated once on fresh data and reservoir seeds.
+5. **Same tuning for every model:** Optuna TPE with the same sampler seed, held-out tuning seeds,
+   rolling-origin folds and a standardised ridge readout. The budget is matched by *search
+   density*, not by trial count: each model gets `--trials-per-dim` trials per knob it tunes and
+   keeps going while it is still improving, because an equal count would search a one-knob model
+   exhaustively and a five-knob model sparsely. Convergence curves are recorded. Each model's best
+   setting is frozen and evaluated once on fresh data and reservoir seeds.
 6. **Statistics:** paired comparisons at run and data-seed level, bootstrap confidence
-   intervals, Wilcoxon, Holm correction. Every result records trial times, package versions,
-   GPU and git commit.
+   intervals, Wilcoxon, Holm correction. Comparisons against a model without a reservoir seed are
+   flagged, as only their data-seed-level statistics are independent. Every result records trial
+   times, package versions, GPU and git commit.
 
 The simulation is exact (no truncation). It runs batched on the CPU (numpy) or GPU (cupy);
 `auto` uses the GPU from 10 qubits, in single precision.
@@ -54,8 +58,9 @@ python -m qrc_bench experiment --task lorenz96 --task-arg n_series=10 --kind win
 python -m qrc_bench bench --layouts 5:3 6:6 --steps 200
 ```
 
-`experiment` resumes an interrupted run from the Optuna studies under `--out`, and refuses to
-resume when the comparison, protocol or simulation settings have changed.
+`experiment` runs at `q >= 10` (`--q-min` to change), resumes an interrupted run from the Optuna
+studies under `--out`, and refuses to resume when the comparison, protocol or simulation settings
+have changed.
 
 ## Test
 

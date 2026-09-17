@@ -83,7 +83,10 @@ class Protocol:
     tune_res_seeds: tuple = (100, 101, 102)
     eval_data_seeds: tuple = (0, 1, 2, 3, 4)
     eval_res_seeds: tuple = (0, 1, 2, 3, 4)
-    n_trials: int = 100
+    n_trials: int | None = None      # fixed budget for every model; None uses the per-dimension rule
+    trials_per_dim: int = 25         # floor budget = trials_per_dim x the model's own tuned knobs
+    patience: int = 50               # stop once this many trials pass without a new best
+    max_trials: int = 300            # cap, whatever the rule
     sampler_seed: int = 0
     n_folds: int = 3
     val_frac: float = 0.10

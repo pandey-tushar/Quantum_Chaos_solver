@@ -9,7 +9,7 @@ import time
 from pathlib import Path
 
 from qrc_bench import registry
-from qrc_bench.layout import ENCODINGS, MEM_RULES, Q_MAX, derive
+from qrc_bench.layout import ENCODINGS, MEM_RULES, Q_MAX, Q_MIN, check_q_min, derive
 from qrc_bench.readouts import READOUTS
 
 
@@ -78,10 +78,12 @@ def cmd_experiment(args):
                          60, 0, **_task_kwargs(args.task_arg)).shape[1],
                      input_window=args.input_window, n_mem=args.n_mem, readout=args.readout, n_taus=args.n_taus,
                      reservoir=args.reservoir, encoding=args.encoding, feedback=not args.no_feedback)
+    check_q_min(cmp.q, args.q_min)
     proto = Protocol(task=args.task, task_kwargs=_task_kwargs(args.task_arg), n_steps=args.n_steps,
                      horizon=args.horizon, tune_data_seeds=_seeds(args.tune_data_seeds),
                      tune_res_seeds=_seeds(args.tune_res_seeds), eval_data_seeds=_seeds(args.eval_data_seeds),
                      eval_res_seeds=_seeds(args.eval_res_seeds), n_trials=args.trials,
+                     trials_per_dim=args.trials_per_dim, patience=args.patience, max_trials=args.max_trials,
                      sampler_seed=args.sampler_seed, n_folds=args.folds, washout=args.washout)
     sim = Sim(method=args.method, backend=args.backend, precision=args.precision)
     run_comparison(cmp, proto, sim, models=args.models, out_dir=args.out, resume=args.resume)
@@ -136,6 +138,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--kind", choices=["window", "recurrent"], required=True)
     p.add_argument("--input-window", type=int, required=True, help="steps of input (reset-QRC depth, lags)")
     p.add_argument("--n-mem", type=int, required=True)
+    p.add_argument("--q-min", type=int, default=Q_MIN, help=f"refuse layouts below this q (default {Q_MIN})")
     p.add_argument("--readout", choices=READOUTS, default="ZZ")
     p.add_argument("--n-taus", type=int, default=1)
     p.add_argument("--reservoir", default="ising_xx")
@@ -148,7 +151,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--tune-res-seeds", nargs="+", default=[100, 101, 102])
     p.add_argument("--eval-data-seeds", nargs="+", default=[0, 1, 2, 3, 4])
     p.add_argument("--eval-res-seeds", nargs="+", default=[0, 1, 2, 3, 4])
-    p.add_argument("--trials", type=int, default=100, help="same budget for every model")
+    p.add_argument("--trials", type=int, help="fixed budget for every model (favours the smallest "
+                                              "search space; default: the per-dimension rule below)")
+    p.add_argument("--trials-per-dim", type=int, default=25, help="floor budget per tuned knob (default 25)")
+    p.add_argument("--patience", type=int, default=50, help="stop a study after this many trials with no new best")
+    p.add_argument("--max-trials", type=int, default=300, help="cap on trials per model")
     p.add_argument("--sampler-seed", type=int, default=0)
     p.add_argument("--folds", type=int, default=3)
     p.add_argument("--washout", type=int, default=50)
