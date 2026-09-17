@@ -1,7 +1,8 @@
-"""Command line: python -m qrc_bench {list, layout, reproduce}."""
+"""Command line: python -m qrc_bench {list, layout, reproduce, tune}."""
 from __future__ import annotations
 
 import argparse
+import ast
 import json
 import subprocess
 import time
@@ -55,6 +56,43 @@ def cmd_reproduce(args):
                       "git_commit": _git_commit(), "wall_time_s": round(time.time() - t0, 2)})
 
 
+def _task_kwargs(pairs) -> dict:
+    out = {}
+    for s in pairs or []:
+        k, _, v = s.partition("=")
+        try:
+            out[k] = ast.literal_eval(v)
+        except (ValueError, SyntaxError):
+            out[k] = v
+    return out
+
+
+def cmd_tune(args):
+    from qrc_bench.tuning import Context, tune_all
+
+    task = registry.get("task", args.task)
+    task_kwargs = _task_kwargs(args.task_arg)
+    outdir = Path(args.out) if args.out else None
+    for ds in args.data_seeds:
+        X = task(args.n_steps, ds, **task_kwargs)
+        for rs in args.res_seeds:
+            print(f"=== tune {args.task} ds{ds} rs{rs}: {X.shape[1]} series, {args.trials} trials per model")
+            ctx = Context(X, rs, horizon=args.horizon, window=args.window, lag_window=args.lag_window,
+                          reservoir=args.reservoir, n_mem_range=(args.n_mem_min, args.n_mem_max),
+                          feedback=not args.no_feedback, esn_units=args.esn_units, method=args.method,
+                          backend=args.backend, q_max=args.q_max)
+            storage = f"sqlite:///{outdir / f'optuna_{args.task}_ds{ds}_rs{rs}.db'}" if outdir and args.resume else None
+            t0 = time.time()
+            rec = tune_all(args.models, ctx, n_trials=args.trials, sampler_seed=args.sampler_seed,
+                           enqueue_defaults=args.enqueue_defaults, storage=storage)
+            payload = {"task": args.task, "task_kwargs": task_kwargs, "n_steps": args.n_steps,
+                       "data_seed": ds, "res_seed": rs, **rec,
+                       "git_commit": _git_commit(), "wall_time_s": round(time.time() - t0, 2)}
+            if outdir:
+                outdir.mkdir(parents=True, exist_ok=True)
+                (outdir / f"tune_{args.task}_ds{ds}_rs{rs}.json").write_text(json.dumps(payload, indent=2))
+
+
 def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(prog="qrc_bench", description=__doc__)
     sub = ap.add_subparsers(dest="command", required=True)
@@ -85,6 +123,32 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--backend", choices=["numpy", "cupy"], default="numpy")
     p.add_argument("--out", help="write the result JSON here too")
     p.set_defaults(func=cmd_reproduce)
+
+    p = sub.add_parser("tune", help="Optuna-tune every model with one shared protocol")
+    p.add_argument("--task", required=True)
+    p.add_argument("--task-arg", action="append", metavar="KEY=VALUE", help="task parameter, repeatable")
+    p.add_argument("--n-steps", type=int, default=1200)
+    p.add_argument("--data-seeds", type=int, nargs="+", default=[0])
+    p.add_argument("--res-seeds", type=int, nargs="+", default=[0])
+    p.add_argument("--horizon", type=int, default=1)
+    p.add_argument("--models", nargs="+", choices=["qrc", "esn", "poly2", "linear"],
+                   default=["qrc", "esn", "poly2", "linear"])
+    p.add_argument("--trials", type=int, default=100, help="same budget for every model")
+    p.add_argument("--sampler-seed", type=int, default=0)
+    p.add_argument("--enqueue-defaults", action="store_true", help="first trial of every model = its defaults")
+    p.add_argument("--reservoir", default="ising_xx")
+    p.add_argument("--n-mem-min", type=int, default=1)
+    p.add_argument("--n-mem-max", type=int, default=6)
+    p.add_argument("--no-feedback", action="store_true", help="fix k_fb = 0 (open loop)")
+    p.add_argument("--esn-units", type=int, help="fix ESN size instead of tuning it")
+    p.add_argument("--window", type=int, default=1, help="stacked steps of reservoir features (QRC, ESN)")
+    p.add_argument("--lag-window", type=int, default=1, help="input window of Poly2 and linear")
+    p.add_argument("--method", choices=["branch", "dense"], default="branch")
+    p.add_argument("--backend", choices=["numpy", "cupy"], default="numpy")
+    p.add_argument("--q-max", type=int, default=Q_MAX)
+    p.add_argument("--out", help="directory for per-seed-pair JSONs")
+    p.add_argument("--resume", action="store_true", help="keep studies in SQLite under --out and resume them")
+    p.set_defaults(func=cmd_tune)
     return ap
 
 

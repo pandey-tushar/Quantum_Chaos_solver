@@ -37,6 +37,31 @@ def ridge_forecast(F, Y, horizon=1, train_frac=0.7, val_frac=0.15, alphas=ALPHAS
     return float(np.mean(rmse / (np.std(Yte, axis=0) + 1e-12)))
 
 
+def _nrmse(P, Y):
+    return float(np.mean(np.sqrt(np.mean((P - Y) ** 2, axis=0)) / (np.std(Y, axis=0) + 1e-12)))
+
+
+def val_nrmse(F, Y, horizon=1, alpha=1e-3, train_frac=0.7, val_frac=0.15) -> float:
+    """Validation NRMSE of a readout fit on the training slice at a fixed alpha. Never touches test."""
+    T, h = len(F), horizon
+    ntr, nval = _splits(T, train_frac, val_frac)
+    if nval - h <= ntr or T <= nval:
+        return float("inf")
+    return _nrmse(F[ntr:nval - h] @ _fit(F[:ntr - h], Y[h:ntr], alpha), Y[ntr + h:nval])
+
+
+def test_nrmse(F, Y, horizon=1, alpha=1e-3, train_frac=0.7, val_frac=0.15) -> float:
+    """Test NRMSE of a readout refit on train + validation at a fixed alpha. Call once, after tuning."""
+    T, h = len(F), horizon
+    _, nval = _splits(T, train_frac, val_frac)
+    if T - h <= nval + 5:
+        return float("nan")
+    return _nrmse(F[nval:T - h] @ _fit(F[:nval - h], Y[h:nval], alpha), Y[nval + h:T])
+
+
+test_nrmse.__test__ = False   # not a pytest test
+
+
 def val_mse(F, Y, horizon=1, alpha=1e-3, train_frac=0.7, val_frac=0.15) -> float:
     """Validation MSE at a fixed ridge alpha; used to choose hyperparameters. Never touches test."""
     T, h = len(F), horizon

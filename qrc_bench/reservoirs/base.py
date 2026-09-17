@@ -13,6 +13,11 @@ class Reservoir:
         self.q, self.seed = q, seed
         self._eig = None
 
+    @staticmethod
+    def suggest(trial) -> dict:
+        """Optuna search space for this reservoir's own parameters (constructor kwargs)."""
+        return {}
+
     def hamiltonian(self) -> np.ndarray:
         raise NotImplementedError
 

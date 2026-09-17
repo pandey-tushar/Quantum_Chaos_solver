@@ -20,6 +20,10 @@ class IsingXX(Reservoir):
         super().__init__(q, seed)
         self.v, self.seed_offset = v, seed_offset
 
+    @staticmethod
+    def suggest(trial) -> dict:
+        return {"v": trial.suggest_float("v", 0.1, 10.0, log=True)}
+
     def hamiltonian(self) -> np.ndarray:
         q = self.q
         rng = np.random.default_rng(self.seed_offset + self.seed)
