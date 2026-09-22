@@ -121,3 +121,96 @@ def test_single_precision_unitary_is_unitary(backend):
 def test_unitary_cache_returns_same_matrix_for_same_tau():
     res = IsingXX(5, seed=0)
     assert res.unitary(0.7) is res.unitary(0.7)
+
+
+# --- the fused kernels: each must reproduce the plain numpy formulation on both backends -------
+
+BACKENDS = ["numpy"] + (["cupy"] if HAS_CUPY else [])
+
+
+def _xp(backend):
+    from qrc_bench.backend import get_xp
+    return get_xp(backend)
+
+
+def _ps_reference(angles, k_fb=0.0, mbar=None):
+    """The formulation the kernel has to match: shift the R_Y angles by k_fb * tanh(mbar), clip,
+    then take the product over qubits."""
+    from qrc_bench.encoders import shift_ry
+    a = angles if mbar is None else shift_ry(angles, (k_fb * np.tanh(mbar))[:, None])
+    a = np.clip(a, -np.pi, np.pi)
+    B, n = a.shape[:2]
+    if a.ndim == 2:
+        c, s = np.cos(a / 2.0), np.sin(a / 2.0)
+    else:
+        ph = np.exp(0.5j * a[..., 1])
+        c, s = np.cos(a[..., 0] / 2.0) * ph.conj(), np.sin(a[..., 0] / 2.0) * ph
+    psi = np.ones((B, 1), complex)
+    for k in range(n):
+        psi = (psi[:, :, None] * np.stack([c[:, k], s[:, k]], axis=1)[:, None, :]).reshape(B, -1)
+    return psi
+
+
+@pytest.mark.parametrize("backend", BACKENDS)
+@pytest.mark.parametrize("n,tail", [(1, ()), (4, ()), (6, ()), (3, (2,)), (5, (2,))])
+@pytest.mark.parametrize("with_shift", [False, True])
+def test_product_states_matches_the_numpy_formulation(backend, n, tail, with_shift):
+    from qrc_bench.backend import to_numpy
+    from qrc_bench.simulate.batched import product_states
+    xp = _xp(backend)
+    rng = np.random.default_rng(n + 10 * len(tail) + int(with_shift))
+    ang = rng.uniform(-4.0, 4.0, (7, n, *tail))              # beyond +-pi: the clip must bite
+    k_fb, mbar = (1.7, rng.uniform(-2.0, 2.0, 7)) if with_shift else (0.0, None)
+    ref = _ps_reference(ang, k_fb, mbar)
+    out = to_numpy(product_states(xp.asarray(ang), xp, np.complex128, k_fb,
+                                  None if mbar is None else xp.asarray(mbar)))
+    assert out.shape == ref.shape and out.dtype == np.complex128
+    assert np.max(np.abs(out - ref)) < 1e-13
+    single = to_numpy(product_states(xp.asarray(ang, dtype=np.float32), xp, np.complex64, k_fb,
+                                     None if mbar is None else xp.asarray(mbar, dtype=np.float32)))
+    assert single.dtype == np.complex64
+    assert np.max(np.abs(single - ref)) < 1e-6
+
+
+@pytest.mark.parametrize("backend", BACKENDS)
+def test_product_states_reads_a_strided_slice_correctly(backend):
+    """simulate feeds it one time step of an (S, T, n) block, which is not contiguous."""
+    from qrc_bench.backend import to_numpy
+    from qrc_bench.simulate.batched import product_states
+    xp = _xp(backend)
+    block = np.random.default_rng(11).uniform(-3.0, 3.0, (4, 9, 3))       # (S, T, n_in)
+    for t in (0, 5, 8):
+        out = to_numpy(product_states(xp.asarray(block)[:, t], xp, np.complex128))
+        assert np.max(np.abs(out - _ps_reference(block[:, t]))) < 1e-13
+
+
+@pytest.mark.parametrize("backend", BACKENDS)
+@pytest.mark.parametrize("dtype,tol", [(np.complex128, 1e-13), (np.complex64, 1e-5)])
+def test_diag_reductions_match_the_numpy_formulation(backend, dtype, tol):
+    from qrc_bench.backend import to_numpy
+    from qrc_bench.simulate.batched import sum_abs2, sum_redot
+    xp = _xp(backend)
+    rng = np.random.default_rng(7)
+    X = (rng.standard_normal((5, 11, 9)) + 1j * rng.standard_normal((5, 11, 9))).astype(dtype)
+    W = (rng.standard_normal((5, 11, 9)) + 1j * rng.standard_normal((5, 11, 9))).astype(dtype)
+    Xd, Wd = xp.asarray(X), xp.asarray(W)
+    assert np.max(np.abs(to_numpy(sum_abs2(Xd, xp)) - (X.real ** 2 + X.imag ** 2).sum(axis=2))) < tol
+    assert np.max(np.abs(to_numpy(sum_redot(Xd, Wd, xp)) - (X * W.conj()).real.sum(axis=2))) < tol
+
+
+@pytest.mark.parametrize("backend", BACKENDS)
+@pytest.mark.parametrize("n_in,n_mem,R", [(2, 3, 1), (3, 2, 1), (1, 4, 1), (2, 2, 2)])
+def test_drive_fresh_equals_a_step_from_the_zero_memory(backend, n_in, n_mem, R):
+    """The |0...0> shortcut must give exactly the state a full drive of e_0 gives."""
+    from qrc_bench.backend import to_numpy
+    from qrc_bench.simulate import batched
+    xp = _xp(backend)
+    Us = [XXZRandomField(n_in + n_mem, seed=s, delta=0.7, W=1.4).unitary(0.9) for s in range(R)]
+    U = xp.asarray(Us[0] if R == 1 else np.stack(Us))
+    drv = batched.Driver(U, n_in, n_mem, xp, np.complex128)
+    ang = np.random.default_rng(3).uniform(-1, 1, (2 * R, n_in))
+    psi = batched.product_states(xp.asarray(ang), xp, np.complex128)
+    kind, M = drv.drive_fresh(psi)
+    (ref_kind, ref_M), _ = drv.step(drv.fresh_memory(2 * R), psi)
+    assert kind == ref_kind and M.shape == ref_M.shape
+    assert np.max(np.abs(to_numpy(M) - to_numpy(ref_M))) == 0.0

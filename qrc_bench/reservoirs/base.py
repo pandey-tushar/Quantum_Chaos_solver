@@ -1,18 +1,22 @@
 from __future__ import annotations
 
 import numpy as np
+from scipy.sparse import csr_matrix
+from scipy.sparse.csgraph import connected_components
 
 
 class Reservoir:
     """Fixed random Hamiltonian H; U(tau) = exp(-i H tau).
 
-    H is diagonalised once (on the requested backend), so every further tau costs one
-    matrix product.
+    H is diagonalised once on the CPU in double precision, block by block: the connected
+    components of its sparsity graph are sectors H never mixes (both registered Hamiltonians are
+    block-diagonal in the computational basis), and a dense H simply gives one block, so nothing
+    is assumed about the symmetry. Every further tau costs one matrix product per block.
     """
 
     def __init__(self, q: int, seed: int):
         self.q, self.seed = q, seed
-        self._eig = {}
+        self._eigenblocks = None
         self._u = {}
 
     @staticmethod
@@ -23,35 +27,42 @@ class Reservoir:
     def hamiltonian(self) -> np.ndarray:
         raise NotImplementedError
 
-    def unitary(self, tau: float, xp=np, dtype=np.complex128):
-        """exp(-i H tau), caching the eigendecomposition per (backend, precision) and only the most
-        recent U (it is 2^q x 2^q on the device).
+    def eigenblocks(self) -> list:
+        """[(idx, w, V), ...]: one double-precision eigh (real solver when H is real) per connected
+        component of the sparsity graph of H, computed once and cached."""
+        if self._eigenblocks is None:
+            H = self.hamiltonian()
+            n, labels = connected_components(csr_matrix(H != 0), directed=False)
+            blocks = []
+            for c in range(n):
+                idx = np.flatnonzero(labels == c)
+                w, V = np.linalg.eigh(H[np.ix_(idx, idx)])
+                blocks.append((idx, w, V))
+            self._eigenblocks = blocks
+        return self._eigenblocks
 
-        CPU: double-precision eigensolver (real when H is real), U = V cos V^T - i V sin V^T.
-        GPU: the eigensolver runs in the requested precision (a real single-precision solve is several
-        times faster on consumer GPUs and gives ~1e-6 unitary error), U assembled in that precision."""
-        single = np.dtype(dtype) == np.complex64
+    def blocks(self) -> list:
+        """Index arrays of the connected components of H (a single entry when H is dense)."""
+        return [idx for idx, _, _ in self.eigenblocks()]
+
+    def unitary(self, tau: float, xp=np, dtype=np.complex128):
+        """exp(-i H tau), assembled block-wise on the CPU in double precision from the cached
+        eigendecomposition (U = V cos V^T - i V sin V^T per block when V is real), then cast to
+        dtype and moved to the backend. Only the most recent U is cached per (backend, tau, dtype)
+        key, because it is 2^q x 2^q on the device."""
         key = (xp.__name__, float(tau), np.dtype(dtype).str)
         if key in self._u:
             return self._u[key]
-        ekey = (xp.__name__, single and xp is not np)
-        if ekey not in self._eig:
-            H = self.hamiltonian()
-            if xp is np:
-                self._eig[ekey] = np.linalg.eigh(H)
+        eig = self.eigenblocks()
+        dim = sum(len(idx) for idx, _, _ in eig)
+        U = np.zeros((dim, dim), dtype=np.complex128)
+        for idx, w, V in eig:
+            if np.isrealobj(V):
+                block = (V * np.cos(w * tau)) @ V.T - 1j * ((V * np.sin(w * tau)) @ V.T)
             else:
-                real = np.isrealobj(H)
-                edtype = (np.float32 if real else np.complex64) if single else (np.float64 if real else np.complex128)
-                self._eig[ekey] = xp.linalg.eigh(xp.asarray(H, dtype=edtype))
-        w, V = self._eig[ekey]
-        if single:
-            w = w.astype(np.float32)
-            V = V.astype(np.float32 if np.isrealobj(V) else np.complex64)
-        if np.isrealobj(V):
-            U = (V * xp.cos(w * tau)) @ V.T - 1j * ((V * xp.sin(w * tau)) @ V.T)
-        else:
-            U = (V * xp.exp(-1j * w * tau)) @ V.conj().T
-        U = U.astype(dtype)
+                block = (V * np.exp(-1j * w * tau)) @ V.conj().T
+            U[np.ix_(idx, idx)] = block
+        U = xp.asarray(U.astype(dtype, copy=False))
         self._u.clear()
         self._u[key] = U
         return U

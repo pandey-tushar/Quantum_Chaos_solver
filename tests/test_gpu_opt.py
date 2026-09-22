@@ -79,7 +79,7 @@ def test_build_streams_matches_per_series_builds(model):
     kind = "window" if model in ("qrc", "random_features", "poly2") else "recurrent"
     cmp = Comparison(kind=kind, n_series=2, input_window=2, n_mem=1)
     params = {"qrc": {"tau": 1.0, "scale": 0.8, "reservoir": {"v": 1.2}, "k_fb": 0.0},
-              "esn": {"sr": 0.9, "leak": 0.3, "in_scale": 0.5, "density": 0.2},
+              "esn": {"sr": 0.9, "leak": 0.3, "in_scale": 0.5, "density": 0.2, "bias_scale": 0.5},
               "random_features": {"scale": 1.0, "bias_scale": 0.5}, "poly2": {}}[model]
     out = build_streams(model, params, Xs, 7, cmp, Sim())
     for X, F in zip(Xs, out):

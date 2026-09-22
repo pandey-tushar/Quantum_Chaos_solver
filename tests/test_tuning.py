@@ -147,3 +147,35 @@ def test_cli_budget_arguments_parse():
     a = build_parser().parse_args(["experiment", "--task", "henon", "--kind", "window",
                                    "--input-window", "2", "--n-mem", "8"])
     assert (a.trials, a.trials_per_dim, a.max_trials, a.patience) == (None, 25, 300, 50)
+
+
+def test_esn_bias_lets_features_be_even():
+    """Without a bias every ESN feature is odd in the input (F(-x) = -F(x)), so the readout
+    cannot form squares or products; the bias removes that handicap."""
+    from qrc_bench.baselines import esn_features
+    X = np.random.default_rng(0).standard_normal((200, 3))
+    odd = esn_features(X, 20, 0, bias_scale=0.0)
+    assert np.allclose(esn_features(-X, 20, 0, bias_scale=0.0), -odd)
+    assert not np.allclose(esn_features(-X, 20, 0, bias_scale=1.0), -esn_features(X, 20, 0, bias_scale=1.0))
+
+
+def test_classical_spaces_tune_a_bias_over_wide_ranges():
+    import optuna
+    from qrc_bench.tuning.spaces import MODELS
+    cmp = Comparison(kind="recurrent", n_series=2, input_window=2, n_mem=1)
+    for model in ("esn", "random_features"):
+        trial = optuna.create_study().ask()
+        MODELS[model].space(trial, cmp)
+        assert trial.distributions["bias_scale"].high >= 10.0
+    trial = optuna.create_study().ask()
+    MODELS["random_features"].space(trial, cmp)
+    assert trial.distributions["scale"].low <= 1e-3        # the old 0.05 bound was where it pinned
+
+
+def test_resuming_a_converged_study_runs_no_more_trials(tmp_path):
+    cmp = Comparison(kind="window", n_series=2, input_window=2, n_mem=1)
+    proto = Protocol(**PER_DIM, trials_per_dim=2, patience=1, max_trials=8)
+    storage = f"sqlite:///{tmp_path / 'studies.db'}"
+    a = tune_model("linear", cmp, proto, Sim(), storage=storage, log=lambda s: None)
+    b = tune_model("linear", cmp, proto, Sim(), storage=storage, log=lambda s: None)
+    assert b["n_trials"] == a["n_trials"] and b["budget"]["stopped"] == a["budget"]["stopped"]

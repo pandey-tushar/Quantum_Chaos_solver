@@ -24,7 +24,7 @@ from optuna.distributions import distribution_to_json
 from qrc_bench import registry
 from qrc_bench.evaluate import fold_bounds, persistence_test, score_test, val_nrmse_folds
 from qrc_bench.stats import holm, paired_comparison
-from qrc_bench.tuning.spaces import ALPHA_RANGE, MODELS, Comparison, Protocol, Sim, build_streams, suggest_alpha
+from qrc_bench.tuning.spaces import ALPHA_RANGE, MODELS, Comparison, Protocol, Sim, build_trial, suggest_alpha
 
 
 BUDGET_KEYS = ("n_trials", "trials_per_dim", "patience", "max_trials")
@@ -61,8 +61,13 @@ def _run_budget(study, objective, proto: Protocol) -> dict:
             state["stopped"] = "patience"
             st.stop()
 
-    remaining = proto.max_trials - len([t for t in study.trials if t.state.is_finished()])
-    if remaining > 0:
+    done = _complete(study)
+    if len(done) >= proto.max_trials:
+        pass                                       # a resumed study that already hit the cap
+    elif len(done) >= floor and done[-1].number - study.best_trial.number >= proto.patience:
+        state["stopped"] = "patience"              # a resumed study that had already converged
+    else:
+        remaining = proto.max_trials - len([t for t in study.trials if t.state.is_finished()])
         study.optimize(objective, n_trials=remaining, callbacks=[stop_when_converged])
     return {"rule": "per_dim", "n_dims": n_dims, "floor": floor, "trials_per_dim": proto.trials_per_dim,
             "patience": proto.patience, "max_trials": proto.max_trials, "stopped": state["stopped"]}
@@ -93,11 +98,14 @@ def tune_model(model: str, cmp: Comparison, proto: Protocol, sim: Sim, storage: 
         p = spec.space(trial, cmp)
         alpha = suggest_alpha(trial)
         per_run = {}
-        for rs in res_seeds:                          # all tuning series of one reservoir in one batch
+        # every tuning series of every reservoir seed of this trial in one batched build
+        todo = [rs for rs in res_seeds if p or rs not in fixed_cache]
+        built = build_trial(model, p, [data[ds] for ds in seeds], todo, cmp, sim) if todo else {}
+        for rs in res_seeds:
             if not p and rs in fixed_cache:
                 Fs = fixed_cache[rs]
             else:
-                Fs = build_streams(model, p, [data[ds] for ds in seeds], rs, cmp, sim)
+                Fs = [built[(rs, i)] for i in range(len(seeds))]
                 for F in Fs:
                     _check_width(model, F, cmp)
                 if not p:
@@ -151,15 +159,18 @@ def evaluate_frozen(model: str, params: dict, alpha: float, cmp: Comparison, pro
     spec = MODELS[model]
     data = {ds: _series(proto, ds) for ds in proto.eval_data_seeds}
     seeds = list(data)
-    rows, fixed = {}, None
-    for rs in proto.eval_res_seeds:                   # all evaluation series of one reservoir in one batch
-        t0 = time.perf_counter()
-        if spec.uses_seed or fixed is None:
-            fixed = build_streams(model, params, [data[ds] for ds in seeds], rs, cmp, sim)
-            for F in fixed:
-                _check_width(model, F, cmp)
-        seconds = (time.perf_counter() - t0) / len(seeds)
-        for ds, F in zip(seeds, fixed):
+    # every evaluation series of every evaluation reservoir seed in one batched build; a model whose
+    # features do not depend on the seed is built once and reused across the reservoir seeds
+    res_seeds = list(proto.eval_res_seeds) if spec.uses_seed else list(proto.eval_res_seeds[:1])
+    t0 = time.perf_counter()
+    built = build_trial(model, params, [data[ds] for ds in seeds], res_seeds, cmp, sim)
+    for F in built.values():
+        _check_width(model, F, cmp)
+    seconds = (time.perf_counter() - t0) / (len(seeds) * len(proto.eval_res_seeds))
+    rows = {}
+    for rs in proto.eval_res_seeds:
+        for i, ds in enumerate(seeds):
+            F = built[(rs if spec.uses_seed else res_seeds[0], i)]
             rows[(ds, rs)] = {"data_seed": ds, "res_seed": rs, "width": int(F.shape[1]),
                               "test_nrmse": score_test(F, data[ds], proto.horizon, alpha, proto.test_frac,
                                                        proto.standardize, proto.washout),
@@ -197,7 +208,7 @@ def run_comparison(cmp: Comparison, proto: Protocol, sim: Sim, models=None, out_
         out_dir.mkdir(parents=True, exist_ok=True)
     storage = f"sqlite:///{out_dir / f'studies_{cmp.kind}.db'}" if out_dir and resume else None
     log(f"=== {cmp.kind} comparison: q={cmp.q} ({cmp.n_in}+{cmp.n_mem}), width {cmp.width}, "
-        f"window {cmp.input_window}, models {models}")
+        f"window {cmp.input_window}, shots {cmp.shots if cmp.shots else 'exact'}, models {models}")
     t0 = time.perf_counter()
     result = {"comparison": cmp.as_dict(), "protocol": proto.as_dict() | {"alpha_range": list(ALPHA_RANGE)},
               "sim": sim.as_dict(), "environment": environment(), "models": {}}

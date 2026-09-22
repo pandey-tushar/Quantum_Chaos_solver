@@ -40,6 +40,7 @@ class Comparison:
     reservoir: str = "ising_xx"
     encoding: str = "per_series"
     feedback: bool = True          # recurrent kind only
+    shots: int | None = None       # Z-basis shots per step for the QRC; None = exact expectations
 
     def __post_init__(self):
         if self.kind not in KINDS:
@@ -139,24 +140,25 @@ def _qrc_build(p, X, seed, cmp: Comparison, sim: Sim):
     memory = "reset" if cmp.kind == "window" else "recurrent"
     return qrc_features(encode(X, cmp.encoding, p["scale"]), cmp.n_in, cmp.n_mem, res, taus=taus, readout=cmp.readout,
                         mem_depth=cmp.input_window, k_fb=p["k_fb"], memory=memory, method=sim.method,
-                        backend=sim.backend, precision=sim.precision)
+                        backend=sim.backend, precision=sim.precision, shots=cmp.shots, shot_seed=seed)
 
 
 def _esn_space(trial, cmp):
     return {"sr": trial.suggest_float("sr", 0.05, 1.5),
             "leak": trial.suggest_float("leak", 0.01, 1.0, log=True),
             "in_scale": trial.suggest_float("in_scale", 0.01, 5.0, log=True),
-            "density": trial.suggest_float("density", 0.02, 1.0)}
+            "density": trial.suggest_float("density", 0.02, 1.0),
+            "bias_scale": trial.suggest_float("bias_scale", 0.0, 10.0)}
 
 
 def _esn_build(p, X, seed, cmp, sim):
     return esn_features(X, cmp.width, seed, sr=p["sr"], leak=p["leak"], in_scale=p["in_scale"],
-                        density=p["density"])
+                        density=p["density"], bias_scale=p["bias_scale"])
 
 
 def _rf_space(trial, cmp):
-    return {"scale": trial.suggest_float("scale", 0.05, 10.0, log=True),
-            "bias_scale": trial.suggest_float("bias_scale", 0.0, 3.0)}
+    return {"scale": trial.suggest_float("scale", 1e-3, 10.0, log=True),
+            "bias_scale": trial.suggest_float("bias_scale", 0.0, 10.0)}
 
 
 def _rf_build(p, X, seed, cmp, sim):
@@ -173,16 +175,37 @@ MODELS = {
 }
 
 
-def build_streams(model: str, params: dict, Xs, seed, cmp: Comparison, sim: Sim) -> list:
-    """Features for several series with one seed. The QRC runs all series as one batch
-    (same reservoir, equal lengths); other models are built one series at a time."""
+def build_trial(model: str, params: dict, Xs, seeds, cmp: Comparison, sim: Sim) -> dict:
+    """Features for every (reservoir seed, series) pair of one trial, keyed (seed, series index).
+
+    The QRC runs all R x len(Xs) of them as one batched simulate call (equal lengths) rather than
+    one call per seed, and uploads one stacked unitary per tau instead of R. How much that saves
+    depends on q: see the note in qrc_features, and expect little below one unitary per drive of
+    bandwidth. Other models are built one series at a time."""
+    seeds = list(seeds)
     if model != "qrc" or len({len(X) for X in Xs}) != 1:
-        return [MODELS[model].build(params, X, seed, cmp, sim) for X in Xs]
-    res = registry.get("reservoir", cmp.reservoir)(cmp.q, seed, **params["reservoir"])
+        return {(seed, i): MODELS[model].build(params, X, seed, cmp, sim)
+                for seed in seeds for i, X in enumerate(Xs)}
+    reservoirs = [registry.get("reservoir", cmp.reservoir)(cmp.q, seed, **params["reservoir"]) for seed in seeds]
     taus = tuple(params["tau"] / 2 ** k for k in range(cmp.n_taus))
     memory = "reset" if cmp.kind == "window" else "recurrent"
-    ang = np.stack([encode(X, cmp.encoding, params["scale"]) for X in Xs])
-    F = qrc_features(ang, cmp.n_in, cmp.n_mem, res, taus=taus, readout=cmp.readout, mem_depth=cmp.input_window,
-                     k_fb=params["k_fb"], memory=memory, method=sim.method, backend=sim.backend,
-                     precision=sim.precision, streams=True)
-    return list(F)
+    ang = np.stack([encode(X, cmp.encoding, params["scale"]) for X in Xs])      # (s, T, n_in[, 2])
+    one = len(seeds) == 1                                 # one reservoir keeps the single-U path
+    if not one:
+        ang = np.ascontiguousarray(np.broadcast_to(ang, (len(seeds),) + ang.shape))
+    # one shot seed for the whole call: the reservoir seed alone when there is one, otherwise a
+    # seed mixed from all of them (the batched call is one noise realisation, see qrc_features)
+    shot_seed = seeds[0] if one else int(np.random.SeedSequence(list(seeds)).generate_state(1)[0])
+    F = qrc_features(ang, cmp.n_in, cmp.n_mem, reservoirs[0] if one else reservoirs, taus=taus,
+                     readout=cmp.readout, mem_depth=cmp.input_window, k_fb=params["k_fb"], memory=memory,
+                     method=sim.method, backend=sim.backend, precision=sim.precision, streams=True,
+                     shots=cmp.shots, shot_seed=shot_seed)
+    if one:
+        F = F[None]
+    return {(seed, i): F[r, i] for r, seed in enumerate(seeds) for i in range(len(Xs))}
+
+
+def build_streams(model: str, params: dict, Xs, seed, cmp: Comparison, sim: Sim) -> list:
+    """Features for several series with one seed, in series order (one slice of build_trial)."""
+    built = build_trial(model, params, Xs, [seed], cmp, sim)
+    return [built[(seed, i)] for i in range(len(Xs))]

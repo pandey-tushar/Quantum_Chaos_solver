@@ -42,6 +42,15 @@ Exploratory branches that are not papers: `paper-3-chaoticity`, `paper-5-quantum
 The simulation is exact (no truncation). It runs batched on the CPU (numpy) or GPU (cupy);
 `auto` uses the GPU from 10 qubits, in single precision.
 
+**Finite shots.** Hardware reports counts, not expectation values, so every QRC readout is measured
+from a finite number of Z-basis shots per step: `--shots auto` (the default) uses 1024 x q shots,
+all in the single Z basis, from which the commuting Z and ZZ features and the feedback signal are
+all read, so their shot noise is correlated the way it is on hardware. This is the restarting
+protocol -- each step's measurement is a fresh preparation of the same circuit, so the memory state
+carried into the next step stays exact and is never collapsed. Pass `--shots N` for an explicit
+budget, or `--shots 0` for exact expectation values (which no hardware can measure; the run logs a
+warning and records `"shots": null`).
+
 ## Install
 
 ```bash

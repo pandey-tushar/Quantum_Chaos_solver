@@ -6,6 +6,7 @@ import numpy as np
 from qrc_bench.backend import get_xp, resolve_backend, to_numpy
 from qrc_bench.encoders import shift_ry
 from qrc_bench.readouts import readout_matrix
+from qrc_bench.shots import sample_probs
 from qrc_bench.simulate import batched, branch, dense
 from qrc_bench.simulate.ops import product_state, sign_tables
 
@@ -52,10 +53,22 @@ def _check_angles(angles, n_in: int, streams: bool):
 def qrc_features(angles: np.ndarray, n_in: int, n_mem: int, reservoir, taus=(1.0,), readout: str = "ZZ",
                  mem_depth: int = 3, k_fb: float = 0.0, memory: str = "reset", method: str = "batched",
                  backend: str = "numpy", precision: str = "auto", chunk_size: int | None = None,
-                 mem_budget_mb="auto", streams: bool = False) -> np.ndarray:
+                 mem_budget_mb="auto", streams: bool = False, shots: int | None = None,
+                 shot_seed: int = 0) -> np.ndarray:
     """Features (T, len(taus) * width) from angles (T, n_in) [R_Y] or (T, n_in, 2) [R_Y, R_Z].
     streams=True: angles carry a leading stream axis (S, T, ...); all streams share the reservoir
     and run as one batch, returning (S, T, F).
+
+    ``reservoir`` may also be a sequence of R reservoirs of the same q (streams=True only). Then
+    angles are (R, s, T, ...) and the result is (R, s, T, F): all R x s streams run as one batch,
+    so a tuning trial's reservoir seeds cost one simulate call instead of R. That pays while the
+    drive is launch-bound rather than bound by streaming the unitaries: measured on an RTX 2050,
+    one recurrent step of 9 streams costs 1.9 ms as 3 reservoirs x 3 streams at q = 10 (3 separate
+    calls: 5.2 ms) but 8.4 ms at q = 12 (3 separate calls: 9.0 ms), because each reservoir's U is
+    re-read per drive and U is 134 MB at q = 12 in single precision.
+    The R unitaries of a tau are stacked into one (R, D, D) device array, each reservoir's own
+    device copy being released as it is stacked. Device memory for the unitaries then peaks at
+    about 2 x R x (one unitary): the stacked array plus the Driver's U4 block.
 
     memory='reset' (the cartography paper's reservoir): at step t the memory qubits start in
     |0...0> and the last ``mem_depth`` inputs are driven in order, tracing out the input qubits
@@ -66,16 +79,37 @@ def qrc_features(angles: np.ndarray, n_in: int, n_mem: int, reservoir, taus=(1.0
     references for tests (reset memory, double precision, numpy, one stream).
     backend 'auto' picks the GPU from q >= 10 when one is present; precision / mem_budget_mb 'auto'
     follow the backend (see resolve_backend, resolve_precision, resolve_budget_mb).
+
+    ``shots``: read every step from ``shots`` projective Z-basis measurements instead of exact
+    expectations (method='batched' only; the reference methods refuse it). This is the restarting
+    protocol: each step's measurement is a fresh preparation of the same circuit, so simulating it
+    is exactly "sample from the unmeasured state at every step" -- the memory state carried into the
+    next step stays exact and is never collapsed. The Z and ZZ features and the feedback signal come
+    from the same empirical distribution, so their shot noise is correlated as on hardware.
+    One call is one noise realisation, seeded by ``shot_seed`` alone: a batched multi-reservoir call
+    and the same reservoirs run in separate calls give different, equally valid realisations.
+    ``shots=None`` (the default) keeps exact expectations, which no hardware can measure.
     """
     q = n_in + n_mem
-    if reservoir.q != q:
-        raise ValueError(f"reservoir has q={reservoir.q}, layout needs {n_in} + {n_mem}")
-    _check_angles(np.asarray(angles), n_in, streams)
+    multi = isinstance(reservoir, (list, tuple))
+    reservoirs = list(reservoir) if multi else [reservoir]
+    for res in reservoirs:
+        if res.q != q:
+            raise ValueError(f"reservoir has q={res.q}, layout needs {n_in} + {n_mem}")
+    ang_np = np.asarray(angles)
+    if multi:
+        if not streams:
+            raise ValueError("a sequence of reservoirs needs streams=True and angles (R, s, T, ...)")
+        if ang_np.ndim < 4 or ang_np.shape[0] != len(reservoirs):
+            raise ValueError(f"angles {ang_np.shape} must start with the {len(reservoirs)} reservoirs")
+    _check_angles(ang_np[0] if multi else ang_np, n_in, streams)
     stacked = streams
     if memory not in batched.MEMORY_MODES:
         raise ValueError(f"unknown memory mode {memory!r}; expected one of {batched.MEMORY_MODES}")
     if method not in METHODS:
         raise ValueError(f"unknown method {method!r}; expected one of {METHODS}")
+    if shots is not None and method != "batched":
+        raise ValueError(f"shots require method='batched', got {method!r}")
     backend = resolve_backend(backend, q)
     precision = resolve_precision(precision, backend)
     if method != "batched":
@@ -93,17 +127,40 @@ def qrc_features(angles: np.ndarray, n_in: int, n_mem: int, reservoir, taus=(1.0
     def readout_fn(P):
         return readout_matrix(P, readout, z_signs, zz_signs, xp)
 
+    shot_rng = xp.random.default_rng(shot_seed) if shots is not None else None
+
+    def sample(P):                                  # one generator = one realisation per call
+        return sample_probs(P, shots, shot_rng, xp)
+
     budget = resolve_budget_mb(mem_budget_mb, backend)
     chunk = chunk_size or auto_chunk(n_in, n_mem, precision, budget)
     ang = xp.asarray(angles, dtype=real)
     if not stacked:
         ang = ang[None]
-    blocks = [batched.simulate(ang, reservoir.unitary(tau, xp=xp, dtype=dtype), n_in, n_mem, readout_fn, xp,
+    lead = ang.shape[:2] if multi else ()
+    if multi:
+        ang = ang.reshape(-1, *ang.shape[2:])          # reservoir-major streams: r * s + i
+    blocks = [batched.simulate(ang, _unitaries(reservoirs, tau, xp, dtype, multi), n_in, n_mem, readout_fn, xp,
                                dtype=dtype, memory=memory, mem_depth=mem_depth, k_fb=k_fb, zbar=zbar,
-                               chunk_size=chunk)
+                               chunk_size=chunk, sample=None if shots is None else sample)
               for tau in taus]
     F = to_numpy(xp.concatenate(blocks, axis=2)).astype(np.float64)
+    if multi:
+        return F.reshape(*lead, *F.shape[1:])
     return F if stacked else F[0]
+
+
+def _unitaries(reservoirs, tau, xp, dtype, multi):
+    """One U (D, D), or the R reservoirs' unitaries stacked into one (R, D, D) device array.
+    Each reservoir's own device copy is dropped once it has been written into the stack."""
+    if not multi:
+        return reservoirs[0].unitary(tau, xp=xp, dtype=dtype)
+    D = 2 ** reservoirs[0].q
+    U = xp.empty((len(reservoirs), D, D), dtype=dtype)
+    for r, res in enumerate(reservoirs):
+        U[r] = res.unitary(tau, xp=xp, dtype=dtype)
+        getattr(res, "_u", {}).clear()
+    return U
 
 
 def _loop_features(angles, n_in, n_mem, reservoir, taus, readout, mem_depth, k_fb, method):

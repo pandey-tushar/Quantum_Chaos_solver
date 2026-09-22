@@ -71,13 +71,34 @@ def _seeds(values):
     return tuple(int(v) for v in values)
 
 
-def cmd_experiment(args):
+SHOTS_PER_QUBIT = 1024      # --shots auto: this many Z-basis shots per qubit per step
+
+
+def resolve_shots(value, q: int, log=print) -> int | None:
+    """--shots: 'auto' = SHOTS_PER_QUBIT x q per step, an explicit positive budget, or 0 for exact
+    expectation values (allowed, but not something hardware can measure)."""
+    if value == "auto":
+        return SHOTS_PER_QUBIT * q
+    n = int(value)
+    if n < 0:
+        raise ValueError(f"--shots must be 'auto', 0, or a positive integer, got {value!r}")
+    if n == 0:
+        log("warning: --shots 0 reads exact expectation values, which are not hardware-realisable; "
+            'the record stores "shots": null')
+        return None
+    return n
+
+
+def cmd_experiment(args, log=print):
+    from dataclasses import replace
+
     from qrc_bench.tuning import Comparison, Protocol, Sim, run_comparison
 
     cmp = Comparison(kind=args.kind, n_series=args.n_series or registry.get("task", args.task)(
                          60, 0, **_task_kwargs(args.task_arg)).shape[1],
                      input_window=args.input_window, n_mem=args.n_mem, readout=args.readout, n_taus=args.n_taus,
                      reservoir=args.reservoir, encoding=args.encoding, feedback=not args.no_feedback)
+    cmp = replace(cmp, shots=resolve_shots(args.shots, cmp.q, log=log))
     check_q_min(cmp.q, args.q_min)
     proto = Protocol(task=args.task, task_kwargs=_task_kwargs(args.task_arg), n_steps=args.n_steps,
                      horizon=args.horizon, tune_data_seeds=_seeds(args.tune_data_seeds),
@@ -86,7 +107,7 @@ def cmd_experiment(args):
                      trials_per_dim=args.trials_per_dim, patience=args.patience, max_trials=args.max_trials,
                      sampler_seed=args.sampler_seed, n_folds=args.folds, washout=args.washout)
     sim = Sim(method=args.method, backend=args.backend, precision=args.precision)
-    run_comparison(cmp, proto, sim, models=args.models, out_dir=args.out, resume=args.resume)
+    run_comparison(cmp, proto, sim, models=args.models, out_dir=args.out, resume=args.resume, log=log)
 
 
 def cmd_bench(args):
@@ -144,6 +165,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--reservoir", default="ising_xx")
     p.add_argument("--encoding", choices=ENCODINGS, default="per_series")
     p.add_argument("--no-feedback", action="store_true", help="recurrent kind: fix k_fb = 0")
+    p.add_argument("--shots", default="auto", metavar="N",
+                   help=f"Z-basis shots per step (default auto = {SHOTS_PER_QUBIT} x q); "
+                        "0 reads exact expectations, which hardware cannot")
     p.add_argument("--models", nargs="+", help="default: all models of the comparison kind")
     p.add_argument("--n-steps", type=int, default=1200)
     p.add_argument("--horizon", type=int, default=1)

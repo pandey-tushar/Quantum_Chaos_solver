@@ -7,6 +7,8 @@ One drive of a product input state psi (B, d1), with W = sum_i psi_i U[:, i, :] 
   factor: Phi = W @ M;  diag(rho_full) = sum_k |Phi_jk|^2;  tracing the inputs gives the factor
           Phi reshaped (B, d2, d1 * r) (the input index becomes a column index)
   rho:    X = W @ R;    diag(rho_full) = Re sum_a X_ja conj(W_ja);  Tr_in = sum_i X_i @ W_i^dagger
+A drive of a memory still in |0...0> is the same formula with M = e_0, so only the d1 columns
+U[:, i * d2] are touched: ``Driver.drive_fresh`` does that one in O(D d1) instead of O(D d1 d2).
 No eigendecompositions are needed. Everything stays on the device; only the final features
 are copied to the host.
 
@@ -17,6 +19,10 @@ Memory modes:
   recurrent  the memory state is carried forward, one drive per step (a true recurrent reservoir);
              all streams advance together; its trace is renormalised each step against round-off.
 Feedback shifts each stream's R_Y drive by k_fb * tanh(mean <Z> of that stream's previous step).
+
+On cupy three fused kernels carry the elementwise work: the product state (with the feedback shift
+and the clip folded in) and the two diag(rho_full) reductions, which as cupy expressions would each
+cost several passes over the (B, D, d2) intermediates. The numpy path is the plain formulation.
 """
 from __future__ import annotations
 
@@ -27,10 +33,87 @@ from qrc_bench.encoders import shift_ry
 MEMORY_MODES = ("reset", "recurrent")
 READOUT_BLOCK = 64          # recurrent: steps of probabilities buffered before one batched readout
 
+# amplitude of basis state j = prod_a [bit_a(j) ? sin(ry_a / 2) : cos(ry_a / 2)] * exp(-+ i rz_a / 2),
+# with the feedback shift k_fb * tanh(mbar_b) on the R_Y angles and every angle then clipped.
+# ``ang`` is indexed by its logical C-order position, which cupy resolves through the array's own
+# strides, so a strided view of the angles (one time step of many) needs no copy first.
+_PRODUCT_CODE = """
+const int dim = 1 << n;
+const int b = i / dim;
+const int j = i - b * dim;
+const double PI = 3.14159265358979323846;
+const double sh = shifted ? k_fb * tanh((double)mbar[b]) : 0.0;
+C amp = C(1, 0);
+for (int a = 0; a < n; ++a) {
+    const int bit = (j >> (n - 1 - a)) & 1;
+    double ry = (double)ang[(b * n + a) * w] + sh;
+    ry = ry > PI ? PI : (ry < -PI ? -PI : ry);
+    const double re = bit ? sin(0.5 * ry) : cos(0.5 * ry);
+    C f = C(re, 0);
+    if (w == 2) {
+        double rz = (double)ang[(b * n + a) * w + 1];
+        rz = rz > PI ? PI : (rz < -PI ? -PI : rz);
+        const double ph = (bit ? 0.5 : -0.5) * rz;
+        f = C(re * cos(ph), re * sin(ph));
+    }
+    amp = amp * f;
+}
+psi = amp;
+"""
+_PRODUCT_KERNEL = None      # one cupy ElementwiseKernel; it resolves T (real) and C (complex) per call
+_REDUCERS = {}              # real dtype name -> (sum |x|^2, Re sum x conj(y)) cupy ReductionKernels
 
-def product_states(angles, xp, dtype):
-    """(B, n) R_Y angles or (B, n, 2) (R_Y, R_Z) angles -> (B, 2^n) product states, qubit 0 most significant."""
+
+def _is_cupy(xp) -> bool:
+    return xp.__name__ == "cupy"
+
+
+def _reducers(xp, dtype):
+    """The two last-axis reduction kernels for one complex dtype, compiled on first use."""
+    name = np.empty(0, dtype=dtype).real.dtype.name
+    if name not in _REDUCERS:
+        _REDUCERS[name] = (
+            xp.ReductionKernel('T x', f'{name} p', 'x.real() * x.real() + x.imag() * x.imag()',
+                               'a + b', 'p = a', '0', f'qrc_sum_abs2_{name}'),
+            xp.ReductionKernel('T x, T y', f'{name} p', 'x.real() * y.real() + x.imag() * y.imag()',
+                               'a + b', 'p = a', '0', f'qrc_sum_redot_{name}'),
+        )
+    return _REDUCERS[name]
+
+
+def sum_abs2(X, xp):
+    """sum_k |X[..., k]|^2 over the last axis, real."""
+    if _is_cupy(xp):
+        return _reducers(xp, X.dtype)[0](X, axis=X.ndim - 1)
+    return (X.real ** 2 + X.imag ** 2).sum(axis=X.ndim - 1)
+
+
+def sum_redot(X, W, xp):
+    """Re sum_k X[..., k] conj(W[..., k]) over the last axis, real."""
+    if _is_cupy(xp):
+        return _reducers(xp, X.dtype)[1](X, W, axis=X.ndim - 1)
+    return (X * W.conj()).real.sum(axis=X.ndim - 1)
+
+
+def product_states(angles, xp, dtype, k_fb=0.0, mbar=None):
+    """(B, n) R_Y angles or (B, n, 2) (R_Y, R_Z) angles -> (B, 2^n) product states, qubit 0 most
+    significant. With ``mbar`` (B,) the R_Y angles are first shifted by the feedback
+    k_fb * tanh(mbar); the angles are then clipped to [-pi, pi]."""
+    global _PRODUCT_KERNEL
     B, n = angles.shape[:2]
+    if _is_cupy(xp):
+        if _PRODUCT_KERNEL is None:
+            _PRODUCT_KERNEL = xp.ElementwiseKernel(
+                'raw T ang, raw T mbar, float64 k_fb, int32 n, int32 w, int32 shifted',
+                'C psi', _PRODUCT_CODE, 'qrc_product_states')
+        mb = angles if mbar is None else mbar.astype(angles.dtype, copy=False)
+        psi = xp.empty((B, 2 ** n), dtype=dtype)
+        _PRODUCT_KERNEL(angles, mb, float(k_fb), np.int32(n),
+                        np.int32(1 if angles.ndim == 2 else 2), np.int32(mbar is not None), psi)
+        return psi
+    if mbar is not None:
+        angles = shift_ry(angles, (k_fb * xp.tanh(mbar))[:, None])
+    angles = xp.clip(angles, -np.pi, np.pi)
     if angles.ndim == 2:
         c, s = xp.cos(angles / 2.0).astype(dtype), xp.sin(angles / 2.0).astype(dtype)
     else:
@@ -45,21 +128,45 @@ def product_states(angles, xp, dtype):
 
 
 class Driver:
-    """Precomputed pieces for one unitary U on n_in input + n_mem memory qubits."""
+    """Precomputed pieces for one unitary U (D, D) on n_in input + n_mem memory qubits, or for
+    R unitaries (R, D, D) driven side by side.
+
+    With R > 1 every batch is reservoir-major: B is a multiple of R and its first B // R elements
+    belong to reservoir 0, the next B // R to reservoir 1, and so on. ``simulate`` keeps that
+    ordering in all three of its paths as long as the streams themselves are ordered
+    reservoir-major (stream index = r * s + i)."""
 
     def __init__(self, U, n_in, n_mem, xp, dtype):
         self.xp, self.dtype = xp, dtype
         self.d1, self.d2 = 2 ** n_in, 2 ** n_mem
         self.D = self.d1 * self.d2
-        self.U4 = xp.ascontiguousarray(U.reshape(self.D, self.d1, self.d2).transpose(1, 0, 2))  # (d1, D, d2)
+        self.R = 1 if U.ndim == 2 else U.shape[0]
+        self.U4 = xp.ascontiguousarray(                                    # (R, d1, D, d2)
+            U.reshape(self.R, self.D, self.d1, self.d2).transpose(0, 2, 1, 3))
+        self._Uw = self.U4.reshape(self.R, self.d1, self.D * self.d2)      # view, one gemm per reservoir
+        self._U0 = xp.ascontiguousarray(self.U4[:, :, :, 0])               # (R, d1, D), memory index 0
 
     def fresh_memory(self, B):
         M = self.xp.zeros((B, self.d2, 1), dtype=self.dtype)
         M[:, 0, 0] = 1.0
         return ("factor", M)
 
+    def drive_fresh(self, psi):
+        """State after driving psi into a memory that is still |0...0>. Same numbers as
+        ``step(fresh_memory(B), psi)[0]``, but with M = e_0 only the columns U[:, i * d2] enter,
+        so it reads d2 times less of U and never forms the (B, D, d2) drive."""
+        B = psi.shape[0]
+        assert B % self.R == 0, f"batch of {B} is not reservoir-major over {self.R} reservoirs"
+        X = (psi.reshape(self.R, B // self.R, self.d1) @ self._U0).reshape(B, self.d1, self.d2)
+        M = self.xp.ascontiguousarray(X.transpose(0, 2, 1))                # (B, d2, d1)
+        if self.d1 <= self.d2:
+            return ("factor", M)
+        return ("rho", M @ M.conj().transpose(0, 2, 1))                    # as step does once r > d2
+
     def _W(self, psi):
-        return self.xp.tensordot(psi, self.U4, axes=(1, 0))      # (B, D, d2)
+        B = psi.shape[0]
+        assert B % self.R == 0, f"batch of {B} is not reservoir-major over {self.R} reservoirs"
+        return (psi.reshape(self.R, B // self.R, self.d1) @ self._Uw).reshape(B, self.D, self.d2)
 
     def final(self, state, psi):
         """diag(rho_full) after driving psi, (B, D) real."""
@@ -67,8 +174,8 @@ class Driver:
         W = self._W(psi)
         X = W @ S
         if kind == "factor":
-            return (X.real ** 2 + X.imag ** 2).sum(axis=2)
-        return (X * W.conj()).real.sum(axis=2)
+            return sum_abs2(X, self.xp)
+        return sum_redot(X, W, self.xp)
 
     def step(self, state, psi, renormalise=False):
         """Drive psi and trace out the inputs: returns (next memory state, diag(rho_full))."""
@@ -78,7 +185,7 @@ class Driver:
         X = W @ S
         B = X.shape[0]
         if kind == "factor":
-            P = (X.real ** 2 + X.imag ** 2).sum(axis=2)
+            P = sum_abs2(X, xp)
             r = X.shape[2]
             M = X.reshape(B, self.d1, self.d2, r).transpose(0, 2, 1, 3).reshape(B, self.d2, self.d1 * r)
             if M.shape[2] <= self.d2:
@@ -86,7 +193,7 @@ class Driver:
             else:
                 nxt = ("rho", M @ M.conj().transpose(0, 2, 1))
         else:
-            P = (X * W.conj()).real.sum(axis=2)
+            P = sum_redot(X, W, xp)
             X4 = X.reshape(B, self.d1, self.d2, self.d2)
             W4 = W.reshape(B, self.d1, self.d2, self.d2)
             nxt = ("rho", (X4 @ W4.conj().transpose(0, 1, 3, 2)).sum(axis=1))
@@ -105,10 +212,16 @@ class Driver:
 
 
 def simulate(angles, U, n_in, n_mem, readout_fn, xp, dtype=np.complex128, memory="reset",
-             mem_depth=3, k_fb=0.0, zbar=None, chunk_size=256):
+             mem_depth=3, k_fb=0.0, zbar=None, chunk_size=256, sample=None):
     """Features for every stream and step. angles: (S, T, n_in[, 2]) device array;
+    U: one unitary (D, D) or R of them (R, D, D), in which case the S streams must be ordered
+    reservoir-major (stream = r * S/R + i) so every batch reaching the Driver is too;
     readout_fn: (B, 2^q) probabilities -> (B, F); zbar: (2^q,) mean-<Z> weights, needed for
-    feedback. ``chunk_size`` bounds the batch (streams x steps). Returns a device array (S, T, F)."""
+    feedback. ``chunk_size`` bounds the batch (streams x steps). Returns a device array (S, T, F).
+
+    ``sample``: (B, 2^q) probabilities -> the same shape, the finite-shot estimate of them. It is
+    applied wherever a probability batch is produced, so the readout and the feedback signal read
+    the same measured distribution; the memory state itself is never touched (see qrc_features)."""
     if memory not in MEMORY_MODES:
         raise ValueError(f"unknown memory mode {memory!r}; expected one of {MEMORY_MODES}")
     drv = Driver(U, n_in, n_mem, xp, dtype)
@@ -117,11 +230,8 @@ def simulate(angles, U, n_in, n_mem, readout_fn, xp, dtype=np.complex128, memory
     feedback = k_fb != 0.0
     mbar = xp.zeros(S, dtype=xp.float32 if dtype == np.complex64 else xp.float64)
 
-    def psi_of(ang):
-        return product_states(xp.clip(ang.reshape(-1, *tail), -np.pi, np.pi), xp, dtype)
-
-    def with_feedback(ang):                                        # ang (S, n_in[, 2])
-        return shift_ry(ang, (k_fb * xp.tanh(mbar))[:, None])
+    def psi_of(ang, mb=None):                                  # mb: feed the previous step's mbar
+        return product_states(ang.reshape(-1, *tail), xp, dtype, k_fb, mb)
 
     rows = []
     if memory == "recurrent":
@@ -131,13 +241,17 @@ def simulate(angles, U, n_in, n_mem, readout_fn, xp, dtype=np.complex128, memory
             psis = None if feedback else psi_of(angles[:, b0:b1].swapaxes(0, 1))
             buf = []
             for k, t in enumerate(range(b0, b1)):
-                psi = psi_of(with_feedback(angles[:, t])) if feedback else psis[k * S:(k + 1) * S]
+                psi = psi_of(angles[:, t], mbar) if feedback else psis[k * S:(k + 1) * S]
                 state, P = drv.step(state, psi, renormalise=True)
                 if feedback:
+                    if sample is not None:
+                        P = sample(P)
                     mbar = P @ zbar
                 buf.append(P)
-            Pb = xp.stack(buf, axis=1)                             # (S, k, D)
-            rows.append(readout_fn(Pb.reshape(S * (b1 - b0), -1)).reshape(S, b1 - b0, -1))
+            Pb = xp.stack(buf, axis=1).reshape(S * (b1 - b0), -1)   # (S, k, D) flattened
+            if sample is not None and not feedback:
+                Pb = sample(Pb)                                    # whole block at once: fewer launches
+            rows.append(readout_fn(Pb).reshape(S, b1 - b0, -1))
         return xp.concatenate(rows, axis=1)
 
     steps = max(1, chunk_size // S)
@@ -145,18 +259,24 @@ def simulate(angles, U, n_in, n_mem, readout_fn, xp, dtype=np.complex128, memory
         ts = np.arange(c0, min(T, c0 + steps))
         L = np.minimum(ts + 1, mem_depth)
         for length in np.unique(L):                                 # increasing length = time order
-            sel = ts[L == length]
-            n = len(sel)
-            state = drv.fresh_memory(S * n)
-            for k in range(length - 1):
-                state, _ = drv.step(state, psi_of(angles[:, xp.asarray(sel - (length - 1) + k)]))
+            lo, n = int(ts[L == length][0]), int((L == length).sum())   # L is sorted: sel is lo .. lo + n
+            # the first of the ``length`` drives starts from |0...0>, which drive_fresh does cheaply
+            state = (drv.fresh_memory(S * n) if length == 1 else
+                     drv.drive_fresh(psi_of(angles[:, lo - length + 1:lo + n - length + 1])))
+            for k in range(1, length - 1):
+                state, _ = drv.step(state, psi_of(angles[:, lo - length + 1 + k:lo + n - length + 1 + k]))
             if not feedback:
-                P = drv.final(state, psi_of(angles[:, xp.asarray(sel)]))
+                P = drv.final(state, psi_of(angles[:, lo:lo + n]))
+                if sample is not None:
+                    P = sample(P)
                 rows.append(readout_fn(P).reshape(S, n, -1))
                 continue
+            base = xp.arange(S) * n                                 # one device index array per group
             buf = []
-            for j, t in enumerate(sel):
-                P = drv.final(drv.take(state, xp.arange(S) * n + j), psi_of(with_feedback(angles[:, t])))
+            for j, t in enumerate(range(lo, lo + n)):
+                P = drv.final(drv.take(state, base + j), psi_of(angles[:, t], mbar))
+                if sample is not None:
+                    P = sample(P)
                 mbar = P @ zbar
                 buf.append(P)
             rows.append(readout_fn(xp.stack(buf, axis=1).reshape(S * n, -1)).reshape(S, n, -1))
