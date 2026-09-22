@@ -75,3 +75,12 @@ def test_dense_encoding_cupy_matches_numpy():
         a = qrc_features(ang, 3, 2, res, memory=memory, k_fb=k_fb)
         b = qrc_features(ang, 3, 2, res, memory=memory, k_fb=k_fb, backend="cupy", precision="double")
         assert np.max(np.abs(a - b)) < 1e-11
+
+
+def test_lorenz96_indexing_matches_roll_formulation():
+    """The RK4 right-hand side uses precomputed neighbour indices; it must equal the np.roll form bit for bit."""
+    import numpy as np
+    from qrc_bench.tasks.lorenz96 import _l96_rhs
+    x = np.random.default_rng(0).standard_normal(7)
+    ref = (np.roll(x, -1) - np.roll(x, 2)) * np.roll(x, 1) - x + 8.0
+    assert np.array_equal(_l96_rhs(x, 8.0), ref)

@@ -73,8 +73,16 @@ def _run_budget(study, objective, proto: Protocol) -> dict:
             "patience": proto.patience, "max_trials": proto.max_trials, "stopped": state["stopped"]}
 
 
+_SERIES_CACHE: dict = {}
+
+
 def _series(proto: Protocol, data_seed: int):
-    return registry.get("task", proto.task)(proto.n_steps, data_seed, **proto.task_kwargs)
+    """One array per (task, length, seed, kwargs): every model of an experiment tunes and evaluates
+    on the same series, and generating one (e.g. Lorenz-96 at 2000 x 25 RK4 steps) costs seconds."""
+    key = (proto.task, proto.n_steps, data_seed, json.dumps(proto.task_kwargs, sort_keys=True))
+    if key not in _SERIES_CACHE:
+        _SERIES_CACHE[key] = registry.get("task", proto.task)(proto.n_steps, data_seed, **proto.task_kwargs)
+    return _SERIES_CACHE[key]
 
 
 def _check_width(model, F, cmp):

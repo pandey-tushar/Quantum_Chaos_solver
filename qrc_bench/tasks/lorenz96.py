@@ -6,8 +6,18 @@ import numpy as np
 from qrc_bench.registry import register
 
 
+_NEIGHBOURS: dict = {}
+
+
 def _l96_rhs(x, forcing):
-    return (np.roll(x, -1) - np.roll(x, 2)) * np.roll(x, 1) - x + forcing
+    """(x_{k+1} - x_{k-2}) x_{k-1} - x_k + F on the ring, via cached neighbour indices (np.roll is
+    the slow part of a 50k-step integration; the arithmetic is unchanged)."""
+    K = len(x)
+    if K not in _NEIGHBOURS:
+        k = np.arange(K)
+        _NEIGHBOURS[K] = ((k + 1) % K, (k - 2) % K, (k - 1) % K)
+    p1, m2, m1 = _NEIGHBOURS[K]
+    return (x[p1] - x[m2]) * x[m1] - x + forcing
 
 
 @register("task", "lorenz96")

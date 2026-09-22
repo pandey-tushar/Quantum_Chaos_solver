@@ -179,3 +179,14 @@ def test_resuming_a_converged_study_runs_no_more_trials(tmp_path):
     a = tune_model("linear", cmp, proto, Sim(), storage=storage, log=lambda s: None)
     b = tune_model("linear", cmp, proto, Sim(), storage=storage, log=lambda s: None)
     assert b["n_trials"] == a["n_trials"] and b["budget"]["stopped"] == a["budget"]["stopped"]
+
+
+def test_series_are_generated_once_per_experiment():
+    """Every model tunes and evaluates on the same series; generating a 2000-step Lorenz-96 series
+    costs ~9 s, so the series cache must hand back the same array for the same request."""
+    from qrc_bench.tuning.study import _series
+    proto = Protocol(**TINY)
+    assert _series(proto, 0) is _series(proto, 0)
+    assert _series(proto, 0) is not _series(proto, 1)
+    from dataclasses import replace
+    assert _series(replace(proto, n_steps=proto.n_steps + 1), 0).shape[0] == proto.n_steps + 1
