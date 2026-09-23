@@ -20,7 +20,8 @@ Exploratory branches that are not papers: `paper-3-chaoticity`, `paper-5-quantum
 1. **Tasks:** `henon` (coupled Hénon maps), `lorenz96`, `switching` / `switching_multi`
    (AR(1) with a hidden sign regime), `drift`. Any number of series.
 2. **Quantum reservoir:** angle encoding (`per_series`, or `dense_rxrz` with two series per
-   qubit), a fixed random Hamiltonian (`ising_xx`, `xxz`, `xxz_uniform`), Z / ZZ readout.
+   qubit), a fixed random Hamiltonian (`ising_xx`, `xxz`, `xxz_uniform`), Z / ZZ readout, or ZX
+   with a second measurement basis.
    Memory is `reset` (the last *L* inputs re-driven at every step, a fixed-window feature map)
    or `recurrent` (the memory state carried forward), with optional measurement feedback.
 3. **Classical models:** ESN, random features, Poly2, linear; persistence as a floor.
@@ -50,6 +51,16 @@ protocol -- each step's measurement is a fresh preparation of the same circuit, 
 carried into the next step stays exact and is never collapsed. Pass `--shots N` for an explicit
 budget, or `--shots 0` for exact expectation values (which no hardware can measure; the run logs a
 warning and records `"shots": null`).
+
+**Measurement bases.** By default everything is read from the single Z basis, where Z and ZZ
+commute, so one measurement per step gives all 78 features at q = 12. `--readout ZX` measures the
+same one- and two-point block a second time in the non-commuting X basis, doubling the width
+(156 at q = 12). The *total* shot budget is unchanged and split 50/50 across the two bases, so the
+comparison is "more bases" against "more shots per basis" at a fixed cost; classical widths follow
+the QRC width as always, so the comparison stays matched. The feedback signal and the memory state
+stay on the Z basis. `ZX` runs on `batched` only -- the reference simulators know only the Z
+diagonal -- and holds a second unitary per reservoir on the device (134 MB more at q = 12 in
+single precision).
 
 ## Install
 

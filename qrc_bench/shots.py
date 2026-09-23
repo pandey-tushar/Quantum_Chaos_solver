@@ -1,10 +1,11 @@
-"""Finite-shot measurement of a Z-basis outcome distribution.
+"""Finite-shot measurement of one basis' outcome distribution.
 
 Hardware never reports an expectation value: it reports counts. One step's readout is M projective
 measurements of the same prepared state, so the exact distribution P over the 2^q computational
 outcomes is replaced by the empirical P_hat = counts / M with counts ~ Multinomial(M, P). Z and ZZ
 commute, so one set of shots gives every Z and ZZ feature at once, with the correlations the shot
-noise really has; the feedback signal is read from the same P_hat.
+noise really has; the feedback signal is read from the same P_hat. A multi-basis readout calls this
+once per basis with the total budget divided between them (see qrc_features).
 
 The sampler is exact (no Gaussian approximation) and vectorised over the rows of a batch, on numpy
 and on cupy alike: per row a cumulative distribution and M uniforms, turned into outcome indices by

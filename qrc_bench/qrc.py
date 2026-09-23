@@ -5,7 +5,7 @@ import numpy as np
 
 from qrc_bench.backend import get_xp, resolve_backend, to_numpy
 from qrc_bench.encoders import shift_ry
-from qrc_bench.readouts import readout_matrix
+from qrc_bench.readouts import readout_bases, readout_matrix
 from qrc_bench.shots import sample_probs
 from qrc_bench.simulate import batched, branch, dense
 from qrc_bench.simulate.ops import product_state, sign_tables
@@ -75,13 +75,19 @@ def qrc_features(angles: np.ndarray, n_in: int, n_mem: int, reservoir, taus=(1.0
     between drives. memory='recurrent': the memory state is carried forward, one drive per step.
     Feedback shifts the current drive by k_fb * tanh(mean <Z> of step t-1); k_fb = 0 is the open loop.
     One block per tau, concatenated (two taus = the paper's ZZ_QR2 readout).
+    readout='ZX' measures a second, non-commuting basis beside the Z one and appends
+    [<X_i>, <X_i X_j>] to the ZZ block, doubling the width. It costs a second drive per step and a
+    second unitary stack per reservoir on the device (134 MB at q = 12 in single precision);
+    method='batched' only, as the reference simulators know only the Z diagonal.
     method='batched' is the fast path (numpy or cupy); 'branch' and 'dense' are per-step
     references for tests (reset memory, double precision, numpy, one stream).
     backend 'auto' picks the GPU from q >= 10 when one is present; precision / mem_budget_mb 'auto'
     follow the backend (see resolve_backend, resolve_precision, resolve_budget_mb).
 
-    ``shots``: read every step from ``shots`` projective Z-basis measurements instead of exact
-    expectations (method='batched' only; the reference methods refuse it). This is the restarting
+    ``shots``: read every step from ``shots`` projective measurements instead of exact
+    expectations (method='batched' only; the reference methods refuse it), split equally across
+    the readout's measurement bases, so 'ZX' measures shots // 2 per basis and the total budget is
+    the same as a single-basis readout's. This is the restarting
     protocol: each step's measurement is a fresh preparation of the same circuit, so simulating it
     is exactly "sample from the unmeasured state at every step" -- the memory state carried into the
     next step stays exact and is never collapsed. The Z and ZZ features and the feedback signal come
@@ -123,14 +129,16 @@ def qrc_features(angles: np.ndarray, n_in: int, n_mem: int, reservoir, taus=(1.0
     z_np, zz_np = sign_tables(q)
     z_signs, zz_signs = xp.asarray(z_np, dtype=real), xp.asarray(zz_np, dtype=real)
     zbar = z_signs.mean(axis=0)
+    bases = readout_bases(readout)
 
     def readout_fn(P):
         return readout_matrix(P, readout, z_signs, zz_signs, xp)
 
     shot_rng = xp.random.default_rng(shot_seed) if shots is not None else None
+    per_basis = None if shots is None else shots // len(bases)
 
     def sample(P):                                  # one generator = one realisation per call
-        return sample_probs(P, shots, shot_rng, xp)
+        return sample_probs(P, per_basis, shot_rng, xp)
 
     budget = resolve_budget_mb(mem_budget_mb, backend)
     chunk = chunk_size or auto_chunk(n_in, n_mem, precision, budget)
@@ -142,7 +150,8 @@ def qrc_features(angles: np.ndarray, n_in: int, n_mem: int, reservoir, taus=(1.0
         ang = ang.reshape(-1, *ang.shape[2:])          # reservoir-major streams: r * s + i
     blocks = [batched.simulate(ang, _unitaries(reservoirs, tau, xp, dtype, multi), n_in, n_mem, readout_fn, xp,
                                dtype=dtype, memory=memory, mem_depth=mem_depth, k_fb=k_fb, zbar=zbar,
-                               chunk_size=chunk, sample=None if shots is None else sample)
+                               chunk_size=chunk, sample=None if shots is None else sample,
+                               x_basis="X" in bases)
               for tau in taus]
     F = to_numpy(xp.concatenate(blocks, axis=2)).astype(np.float64)
     if multi:
@@ -164,6 +173,8 @@ def _unitaries(reservoirs, tau, xp, dtype, multi):
 
 
 def _loop_features(angles, n_in, n_mem, reservoir, taus, readout, mem_depth, k_fb, method):
+    if "X" in readout_bases(readout):
+        raise ValueError(f"multi-basis readout requires method='batched', got {method!r}")
     simulate = LOOP_SIMULATORS[method]
     q = n_in + n_mem
     z_signs, zz_signs = sign_tables(q)

@@ -166,7 +166,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--encoding", choices=ENCODINGS, default="per_series")
     p.add_argument("--no-feedback", action="store_true", help="recurrent kind: fix k_fb = 0")
     p.add_argument("--shots", default="auto", metavar="N",
-                   help=f"Z-basis shots per step (default auto = {SHOTS_PER_QUBIT} x q); "
+                   help=f"total shots per step, split across the readout's measurement bases "
+                        f"(default auto = {SHOTS_PER_QUBIT} x q); "
                         "0 reads exact expectations, which hardware cannot")
     p.add_argument("--models", nargs="+", help="default: all models of the comparison kind")
     p.add_argument("--n-steps", type=int, default=1200)

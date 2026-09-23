@@ -40,7 +40,8 @@ class Comparison:
     reservoir: str = "ising_xx"
     encoding: str = "per_series"
     feedback: bool = True          # recurrent kind only
-    shots: int | None = None       # Z-basis shots per step for the QRC; None = exact expectations
+    shots: int | None = None       # QRC shots per step, split across the readout's measurement
+                                   # bases; None = exact expectations
 
     def __post_init__(self):
         if self.kind not in KINDS:
