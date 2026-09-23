@@ -24,21 +24,23 @@ def resolve_precision(precision: str, backend: str) -> str:
     return precision
 
 
-def resolve_budget_mb(budget, backend: str) -> float:
-    """'auto' = half of the GPU memory that is free (device + CuPy pool), 512 MB on the CPU."""
+def resolve_budget_mb(budget, backend: str, reserve_mb: float = 0.0) -> float:
+    """'auto' = half of the GPU memory that is free (device + CuPy pool) after ``reserve_mb`` still to be
+    allocated (the Driver's unitary blocks), 512 MB on the CPU."""
     if budget != "auto":
         return float(budget)
     if backend != "cupy":
         return 512
     import cupy
     free = cupy.cuda.Device().mem_info[0] + cupy.get_default_memory_pool().free_bytes()
-    return max(32.0, 0.5 * free / 2 ** 20)
+    return max(32.0, 0.5 * (free / 2 ** 20 - reserve_mb))
 
 
-def auto_chunk(n_in: int, n_mem: int, precision: str, mem_budget_mb: float) -> int:
-    """Batch elements (streams x steps) so the largest intermediates (~4 x (B, 2^q, 2^n_mem)) fit the budget."""
+def auto_chunk(n_in: int, n_mem: int, precision: str, mem_budget_mb: float, x_basis: bool = False) -> int:
+    """Batch elements (streams x steps) so the largest intermediates fit the budget: ~4 arrays of
+    (B, 2^q, 2^n_mem) for the Z drive, two more (W_X and W_X M) when the X basis is read as well."""
     itemsize = 8 if precision == "single" else 16
-    per_element = 4 * 2 ** (n_in + n_mem) * 2 ** n_mem * itemsize
+    per_element = (6 if x_basis else 4) * 2 ** (n_in + n_mem) * 2 ** n_mem * itemsize
     return max(1, int(mem_budget_mb * 2 ** 20 // per_element))
 
 
@@ -140,19 +142,24 @@ def qrc_features(angles: np.ndarray, n_in: int, n_mem: int, reservoir, taus=(1.0
     def sample(P):                                  # one generator = one realisation per call
         return sample_probs(P, per_basis, shot_rng, xp)
 
-    budget = resolve_budget_mb(mem_budget_mb, backend)
-    chunk = chunk_size or auto_chunk(n_in, n_mem, precision, budget)
+    x_basis = "X" in bases
     ang = xp.asarray(angles, dtype=real)
     if not stacked:
         ang = ang[None]
     lead = ang.shape[:2] if multi else ()
     if multi:
         ang = ang.reshape(-1, *ang.shape[2:])          # reservoir-major streams: r * s + i
-    blocks = [batched.simulate(ang, _unitaries(reservoirs, tau, xp, dtype, multi), n_in, n_mem, readout_fn, xp,
-                               dtype=dtype, memory=memory, mem_depth=mem_depth, k_fb=k_fb, zbar=zbar,
-                               chunk_size=chunk, sample=None if shots is None else sample,
-                               x_basis="X" in bases)
-              for tau in taus]
+    # the Driver copies every unitary into its U4 block (and U4_X): reserve them before sizing the batch
+    reserve_mb = len(reservoirs) * (2 if x_basis else 1) * 2 ** (2 * q) * np.dtype(dtype).itemsize / 2 ** 20
+    blocks = []
+    for tau in taus:
+        U = _unitaries(reservoirs, tau, xp, dtype, multi)      # on the device before the budget is read
+        chunk = chunk_size or auto_chunk(n_in, n_mem, precision,
+                                         resolve_budget_mb(mem_budget_mb, backend, reserve_mb), x_basis)
+        blocks.append(batched.simulate(ang, U, n_in, n_mem, readout_fn, xp, dtype=dtype, memory=memory,
+                                       mem_depth=mem_depth, k_fb=k_fb, zbar=zbar, chunk_size=chunk,
+                                       sample=None if shots is None else sample, x_basis=x_basis))
+        del U
     F = to_numpy(xp.concatenate(blocks, axis=2)).astype(np.float64)
     if multi:
         return F.reshape(*lead, *F.shape[1:])

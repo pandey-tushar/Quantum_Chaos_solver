@@ -118,3 +118,34 @@ def test_experiment_cli_resumes_by_default():
     assert build_parser().parse_args(base).resume is True
     assert build_parser().parse_args(base + ["--no-resume"]).resume is False
     assert build_parser().parse_args(base).backend == "auto"
+
+
+def test_x_basis_chunk_accounts_for_its_extra_intermediates():
+    """The X-basis drive holds two more (B, 2^q, 2^n_mem) arrays (W_X and W_X M) beside the four
+    of the Z drive, so the batch must shrink to 4/6 of the Z-only one under the same budget."""
+    from qrc_bench.qrc import auto_chunk
+    per_array = 2 ** 12 * 2 ** 6 * 8                                   # one (2^q, 2^n_mem) complex64 slab
+    assert auto_chunk(6, 6, "single", 1500) == 1500 * 2 ** 20 // (4 * per_array)
+    assert auto_chunk(6, 6, "single", 1500, x_basis=True) == 1500 * 2 ** 20 // (6 * per_array)
+
+
+def test_budget_reserves_the_unitary_blocks_and_is_resolved_after_them(monkeypatch):
+    """The window ZX cell died of CUDA OOM: the batch budget was taken from the free memory before
+    the R unitaries (and the Driver's U4 / U4_X blocks) were allocated. The budget must be resolved
+    after the unitaries exist, with the Driver's blocks reserved."""
+    import qrc_bench.qrc as qrcmod
+    from qrc_bench import registry
+    from qrc_bench.backend import gpu_available
+    from qrc_bench.qrc import qrc_features, resolve_budget_mb
+    assert resolve_budget_mb("auto", "numpy", reserve_mb=100) == 512          # CPU budget is fixed
+    assert resolve_budget_mb(300, "cupy", reserve_mb=100) == 300               # explicit budgets are kept
+    if gpu_available():
+        assert resolve_budget_mb("auto", "cupy", reserve_mb=200) <= resolve_budget_mb("auto", "cupy") - 99
+    order = []
+    real_budget, real_unitaries = qrcmod.resolve_budget_mb, qrcmod._unitaries
+    monkeypatch.setattr(qrcmod, "resolve_budget_mb", lambda *a, **k: order.append("budget") or real_budget(*a, **k))
+    monkeypatch.setattr(qrcmod, "_unitaries", lambda *a, **k: order.append("unitaries") or real_unitaries(*a, **k))
+    res = registry.get("reservoir", "ising_xx")(3, 0)
+    ang = np.random.default_rng(0).uniform(-1, 1, (8, 1))
+    qrc_features(ang, 1, 2, res, backend="numpy", mem_budget_mb="auto", readout="ZX")
+    assert order == ["unitaries", "budget"]
