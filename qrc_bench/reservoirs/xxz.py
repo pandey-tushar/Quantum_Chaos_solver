@@ -74,7 +74,7 @@ class XXZRandomField(_XXZBase):
     @staticmethod
     def suggest(trial) -> dict:
         return {"delta": trial.suggest_float("delta", -2.0, 2.0),
-                "W": trial.suggest_float("W", 0.1, 10.0, log=True)}
+                "W": trial.suggest_float("W", 0.1, 30.0, log=True)}
 
     def _disorder(self, rng):
         couplings = {e: self.J for e in edges(self.q, self.topology)}

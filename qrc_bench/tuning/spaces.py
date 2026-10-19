@@ -23,7 +23,7 @@ from qrc_bench.encoders import encode, n_encoded_qubits
 from qrc_bench.qrc import qrc_features
 from qrc_bench.readouts import readout_width
 
-ALPHA_RANGE = (1e-6, 1e2)
+ALPHA_RANGE = (1e-9, 1e2)
 KINDS = ("window", "recurrent")
 WINDOW_MODELS = ("qrc", "random_features", "poly2", "linear")
 RECURRENT_ONLY = ("esn",)
@@ -149,11 +149,11 @@ def _qrc_build(p, X, seed, cmp: Comparison, sim: Sim):
 
 
 def _esn_space(trial, cmp):
-    return {"sr": trial.suggest_float("sr", 0.05, 1.5),
+    return {"sr": trial.suggest_float("sr", 0.01, 1.5),
             "leak": trial.suggest_float("leak", 0.01, 1.0, log=True),
             "in_scale": trial.suggest_float("in_scale", 0.01, 5.0, log=True),
             "density": trial.suggest_float("density", 0.02, 1.0),
-            "bias_scale": trial.suggest_float("bias_scale", 0.0, 10.0)}
+            "bias_scale": trial.suggest_float("bias_scale", 0.0, 30.0)}
 
 
 def _esn_build(p, X, seed, cmp, sim):

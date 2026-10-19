@@ -190,3 +190,19 @@ def test_series_are_generated_once_per_experiment():
     assert _series(proto, 0) is not _series(proto, 1)
     from dataclasses import replace
     assert _series(replace(proto, n_steps=proto.n_steps + 1), 0).shape[0] == proto.n_steps + 1
+
+
+def test_pinned_search_edges_were_widened():
+    """Every tuned optimum of the finite-shot grid sat on a range edge: v and W at 10, the ESN
+    spectral radius at 0.05 and bias at 10, ridge alpha at 1e-6. Widened on both sides together."""
+    import optuna
+    from qrc_bench import registry
+    from qrc_bench.tuning.spaces import ALPHA_RANGE, MODELS
+    assert ALPHA_RANGE[0] <= 1e-9
+    for res, knob in (("xxz", "W"), ("ising_xx", "v")):
+        trial = optuna.create_study().ask()
+        registry.get("reservoir", res).suggest(trial)
+        assert trial.distributions[knob].high >= 30.0
+    trial = optuna.create_study().ask()
+    MODELS["esn"].space(trial, Comparison(kind="recurrent", n_series=2, input_window=2, n_mem=1))
+    assert trial.distributions["sr"].low <= 0.01 and trial.distributions["bias_scale"].high >= 30.0

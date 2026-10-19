@@ -21,7 +21,7 @@ class IsingXX(Reservoir):
 
     @staticmethod
     def suggest(trial) -> dict:
-        return {"v": trial.suggest_float("v", 0.1, 10.0, log=True)}
+        return {"v": trial.suggest_float("v", 0.1, 30.0, log=True)}
 
     def hamiltonian(self) -> np.ndarray:
         """Built in the computational basis: X_i X_j flips bits i and j; Z_i is diagonal."""
