@@ -38,41 +38,34 @@ Against Tuned Classical Baselines}
 
 \begin{abstract}
 Does a quantum reservoir computer (QRC) forecast a chaotic system better than a classical model
-when the comparison is fair? We fix four conditions for a fair comparison: every classical
-baseline is tuned with a search budget comparable to the QRC's, the classical models see the same
-input window and have the same number of features, the QRC's headline number is read from a finite
-number of measurement shots, and every result is a multi-seed statistic. Under these conditions we
-run eight cells on one-step forecasting of a six-variable Lorenz-96 system with a
-twelve-qubit reservoir: two memory schemes (reset and recurrent), two Hamiltonians (a disordered
-XXZ chain and an all-to-all Ising model) and two readouts (one measurement basis or two). In all
-eight cells the QRC loses to a random-feature map of the same width and window, on every one of
-five fresh data seeds. The best QRC cell ties a degree-2 polynomial of the input window, and an
-echo-state network of the same width wins every recurrent cell by a wide margin. Measuring a second,
-non-commuting basis is the largest single gain for the QRC, but it does not close the gap. In one
-XXZ, single-basis pair per memory scheme, finite shots cost the recurrent QRC far more than the reset
-one, and a local refinement stage after the Bayesian search, tested in the best QRC cell, improves
-no model. In free-running forecasts no model's mean valid prediction time reaches one Lyapunov time,
-and the QRC stays behind the random features and the echo-state network; with one basis it falls
-to a tie with the linear model (reset memory) or the polynomial (recurrent memory), and with two
-bases it outlasts the polynomial, which diverges on its own output. All tables are generated from the stored result records.
+when the comparison is fair? We fix four conditions: every classical baseline is tuned with a
+search budget comparable to the QRC's, the classical models see the same input window and have the
+same number of features, the QRC's headline number is read from a finite number of measurement
+shots, and every result is a multi-seed statistic. Under these conditions we run eight cells on
+one-step forecasting of a six-variable Lorenz-96 system with a twelve-qubit reservoir: two memory
+schemes (reset and recurrent), two Hamiltonians (a disordered XXZ model and an all-to-all Ising
+model) and two readouts (one measurement basis or two). In all eight cells the QRC loses to a
+random-feature map of the same width and window on every one of five fresh data seeds. The best QRC
+cell ties a degree-2 polynomial of the input window, and an echo-state network of the same width
+wins every recurrent cell by a wide margin. A second, non-commuting measurement basis is the QRC's
+largest gain but does not close the gap. In one single-basis XXZ pair per memory scheme, finite
+shots cost the recurrent QRC far more than the reset one and turn a tie with the random features
+into a loss. Neither a local refinement stage after the Bayesian search (tested in the best QRC
+cell) nor widened parameter ranges (tested in the two-basis Ising cells) changes a verdict against
+the random features or the echo-state network. In free-running forecasts no model's mean valid
+prediction time reaches one Lyapunov time, and the QRC stays behind the random features and the
+echo-state network. All tables are generated from the stored result records.
 \end{abstract}
 
 \section{Introduction}
 
 Quantum reservoir computing trains only a linear readout on the measured outputs of a fixed quantum
 system driven by the input signal~\cite{fujii2017}. Because nothing quantum is trained, it is a
-candidate for near-term hardware, and a number of studies report that a small quantum reservoir
+candidate for near-term hardware, and several studies report that a small quantum reservoir
 forecasts chaotic or nonlinear time series better than a classical one~\cite{ahmed2024,
 kobayashi2024,nguyen2026}. Whether such a result says something about the quantum system or about
-the comparison depends on how the classical side was set up. In earlier work we found that two
-commonly cited QRC advantages did not survive once the classical baseline received the same tuning
-and capacity as the quantum model~\cite{pandey2026cartography}, and that a high-dimensional quantum
-reservoir did not gain from its dimension when matched against classical models of the same
-width~\cite{pandey2026qra}; a related study compared fixed-reservoir and variational quantum
-models on the Lorenz-63 system~\cite{pandey2026qpinn}.
-
-This paper asks the same question on a harder target and under stricter conditions. We call a
-comparison fair when four conditions hold:
+the comparison depends on how the classical side was set up. We call a comparison fair when four
+conditions hold:
 \begin{enumerate}
 \item every classical baseline is tuned with a budget comparable to the QRC's, by the same search
   method, on the same tuning seeds;
@@ -84,298 +77,221 @@ comparison fair when four conditions hold:
   used in tuning, with paired tests corrected for multiple comparisons.
 \end{enumerate}
 
-We run eight cells on one-step forecasting of Lorenz-96 with $K=6$ variables and a
-$q=\nQubits$ qubit reservoir. The finding is plain. In all eight cells the QRC loses to a random
-tanh feature map of the same width and window on every data seed (it wins \maxQrcRunWinsRf{} of 25
-runs and \maxQrcSeedWinsRf{} of 5 data seeds in every cell; the largest Holm-corrected $p$ is
-$\maxPRf$). The best QRC cell ties a degree-2 polynomial of the input window, and in the recurrent
-cells an echo-state network (ESN) of the same width wins by $\minGapEsn$ to $\maxGapEsn$ in
-$\nrmse$. Run as free-running forecasters, no model's mean valid prediction time reaches one
-Lyapunov time (the ESN is longest, $\vptBest$), and the QRC still has a shorter mean VPT than the random features in
-every cell (significantly in \vptSigRfCells{} of 8) and than the ESN in every recurrent cell.
-Section~\ref{sec:related} sets out the patterns by which advantage claims are usually
-made, Section~\ref{sec:protocol} the protocol, Section~\ref{sec:results} the results, and
-Sections~\ref{sec:discussion} to~\ref{sec:repro} what would have to change for a QRC to win here,
-the limits of the study, and how to reproduce it.
+\paragraph{What is new.} In earlier work~\cite{pandey2026cartography} we compared QRCs with
+capacity- and tuning-matched classical models in noiseless statevector simulation at up to eleven
+qubits, on coupled H\'enon maps and a regime-switching autoregression, and found that neither a
+correlator readout nor measurement feedback gave the QRC an edge. A companion study tested whether a
+high-dimensional quantum reservoir gains from its dimension~\cite{pandey2026qra}, and a third
+compared fixed-reservoir and variational quantum models on Lorenz-63~\cite{pandey2026qpinn}. This
+paper changes five things. Every QRC number is read from finite shots, and the cost of shots is
+measured against exact values. A second, non-commuting measurement basis is added at the same total
+shot budget, and the width-matched classical models grow with it. The tuning budget is matched by
+search density (trials per tuned knob, run to convergence) rather than by trial count, and its
+sufficiency is checked by a local refinement stage and by widened ranges. Our own records show a
+verdict reversing when one ESN knob is added to the search. And every frozen model is also run as a
+free-running forecaster.
+
+\paragraph{Finding.} On one-step forecasting of Lorenz-96 with $K=6$ variables and a
+$q=\nQubits$ qubit reservoir, the QRC loses to a random tanh feature map of the same width and window
+on every data seed of all eight cells. Its best cell ties a degree-2 polynomial of the input window,
+and an echo-state network (ESN) of the same width wins every recurrent cell. The free-running test
+keeps this ordering.
 
 \section{How advantage claims are usually made}
 \label{sec:related}
 
-We list six patterns that recur in QRC benchmarks. None of them makes a result wrong; each makes it
-answer a narrower question than an advantage claim needs. We map individual papers to the patterns
-only where their own text states the relevant fact.
+Six patterns recur in QRC benchmarks. None makes a result wrong; each makes it answer a narrower
+question than an advantage claim needs. We map papers to patterns only where their own text states
+the relevant fact.
 
-\paragraph{1. Resources counted in different units.} A quantum reservoir is often sized by its
-number of qubits and a classical one by its number of neurons. Ahmed, Tennie and
-Magri~\cite{ahmed2024} report that on Lorenz-63 their best quantum architecture at 9 to 11
-qubits reaches valid prediction times similar to those of classical reservoirs of 500 to 2000
-neurons (their Fig.~8). Qubits and neurons are not the
-same resource for a linear readout: what the readout sees is the number of measured features. We
-match that number directly.
+\paragraph{1. Resources counted in different units.} A quantum reservoir is often sized in qubits
+and a classical one in neurons. Ahmed, Tennie and Magri~\cite{ahmed2024} find that on Lorenz-63
+their best quantum architecture at 9 to 11 qubits reaches valid prediction times similar to those of
+classical reservoirs of 500 to 2000 neurons, while the classical reservoir outperforms every quantum
+architecture at the same reservoir size; three quantum architectures outperform it on a
+ten-variable Lorenz-96 system as the size grows (their Figs.~8 and~12). What a linear readout sees is
+the number of measured features, and we match that number directly.
 
-\paragraph{2. Untuned or lightly tuned baselines.} The strength of a baseline depends on which of
-its knobs are searched. Kobayashi, Fujii and Yamamoto~\cite{kobayashi2024} report the best ESN over a
-grid of five spectral radii and four learning rates (their Appendix~D). Nguyen and
-Soh~\cite{nguyen2026}, forecasting the Mackey-Glass series with a driven Jaynes-Cummings reservoir,
-tune an ESN's spectral radius, leak, input scale and bias over 810 settings on the training loss,
-while their quantum model receives grid search, Bayesian search and then a further QFI-aware
-optimisation stage. Ahmed et al.~\cite{ahmed2024} tune hyperparameters with grid search and
-Bayesian optimisation and find that the classical reservoir outperforms every quantum architecture
-on Lorenz-63 at the same reservoir size (their Fig.~8), while three quantum architectures outperform
-it on a ten-variable Lorenz-96 system as the reservoir grows (their Fig.~12). Section~\ref{sec:why}
-shows in our own records how one missing knob reverses a result.
+\paragraph{2. Untuned or lightly tuned baselines.} The strength of a baseline depends on which knobs
+are searched. Kobayashi, Fujii and Yamamoto~\cite{kobayashi2024} report the best ESN over a grid of
+five spectral radii and four learning rates (their Appendix~D). Nguyen and Soh~\cite{nguyen2026},
+forecasting the Mackey-Glass series with a driven Jaynes-Cummings reservoir, tune an ESN's spectral
+radius, leak, input scale and bias over 810 settings on the training loss, while their quantum model
+receives grid search, Bayesian search and a further QFI-aware optimisation stage.
 
-\paragraph{3. QRC compared with QRC.} Much careful work compares quantum reservoirs with each
-other: across dynamical regimes~\cite{martinezpena2021} or across measurement
-protocols~\cite{mujal2023}. That is the right way to design a reservoir, but a gain over another
-quantum reservoir is not a gain over a classical model, and the two are easy to conflate when the
-same paper uses advantage language.
+\paragraph{3. QRC compared with QRC.} Careful work compares quantum reservoirs across dynamical
+regimes~\cite{martinezpena2021} or measurement protocols~\cite{mujal2023}. That is how a reservoir
+should be designed, but a gain over another QRC is not a gain over a classical model.
 
-\paragraph{4. Capacity metrics in place of forecast error.} Memory capacity and expressive capacity
-measure what a reservoir could represent. Hu et al.~\cite{hu2023} give a framework for the expressive
-capacity of a quantum system under the sampling noise of finite measurement. Capacity is useful for
-design, but it does not say whether a tuned classical model forecasts the same task better.
+\paragraph{4. Capacity metrics in place of forecast error.} Hu et al.~\cite{hu2023} give a framework
+for the expressive capacity of a quantum system under the sampling noise of finite measurement.
+Capacity guides design; it does not say whether a tuned classical model forecasts the task better.
 
-\paragraph{5. Exact expectations in the headline, shots elsewhere.} Hardware returns counts. Ahmed
-et al.~\cite{ahmed2024} report noise-free emulation and leave finite sampling to future work;
-Kobayashi et al.~\cite{kobayashi2024} state their main results under negligible statistical
-fluctuations and treat the statistical uncertainty of a finite number of measurements in their
-Appendix~C; Nguyen and
-Soh~\cite{nguyen2026} obtain their margins from expectation-value simulations and analyse finite
-shots in a supplementary note. Section~\ref{sec:shots} shows that this choice can change the
-verdict.
+\paragraph{5. Exact expectations in the headline, shots elsewhere.} Hardware returns counts. The
+results of~\cite{ahmed2024} come from noise-free emulation, with finite sampling left to future
+work; \cite{kobayashi2024} state their main results under negligible statistical fluctuations and
+treat a finite number of measurements in their Appendix~C; \cite{nguyen2026} obtain their margins
+from expectation-value simulations and analyse shots in a supplementary note.
 
 \paragraph{6. Few seeds.} A single reservoir draw on a single series gives no estimate of the
-spread between draws, so a gap of a few percent cannot be told from luck. We do not attribute this
-pattern to specific papers here; we report every comparison over $5\times5$ evaluation runs.
+spread between draws. We do not attribute this pattern to specific papers; we report every
+comparison over $5\times5$ evaluation runs.
 
-Where strong classical baselines are included, they often win: in the multivariate gate-based study
-of Hamhoum et al.~\cite{hamhoum2025} the QRC matches classical reservoir computing on Lorenz-63 but a
+Where strong classical baselines are included they often win: in the gate-based multivariate study of
+Hamhoum et al.~\cite{hamhoum2025} the QRC matches classical reservoir computing on Lorenz-63, but a
 nonlinear vector autoregression and a clustered ESN remain stronger in some settings.
 
 \section{Protocol}
 \label{sec:protocol}
 
-All runs use the \texttt{qrc\_bench} pipeline (Section~\ref{sec:repro}). Every constant in this
-section is read from the pipeline source or from the stored records.
+All runs use the \texttt{qrc\_bench} pipeline (Section~\ref{sec:repro}); every constant below is read
+from its source or from the stored records.
 
-\subsection{Task}
+\paragraph{Task.} Lorenz-96 with $K=6$ variables on a ring,
+$\dot x_k = (x_{k+1}-x_{k-2})x_{k-1} - x_k + F$ with $F=8$, is integrated by fourth-order
+Runge-Kutta with step $0.01$; one sample is kept every $\sampleEvery$ steps, after 1000 discarded
+samples, and each variable is standardised. A series has 2000 samples in the window cells and 3000
+in the recurrent cells. The target is the next sample of all six variables. The score is the
+one-step $\nrmse$ on the last 15 percent of the series, averaged over the six variables, each
+normalised by its test-slice standard deviation, so that $\nrmse=1$ is the mean predictor. The
+readout is fit once on everything before the test slice, after a washout of 50 samples (window) or
+400 (recurrent).
 
-Lorenz-96 with $K=6$ variables on a ring, $\dot x_k = (x_{k+1}-x_{k-2})x_{k-1} - x_k + F$ with
-$F=8$, is integrated by fourth-order Runge-Kutta with step $0.01$; one sample is kept every 25
-steps, after 1000 discarded samples, and each variable is standardised. A series has 2000 samples
-in the window cells and 3000 in the recurrent cells. The target is the next sample of all six
-variables. The score is the one-step-ahead $\nrmse$ on the last 15 percent of the series, averaged
-over the six variables, each normalised by its standard deviation on the test slice, so that
-$\nrmse=1$ is the mean predictor. The readout is fit once on everything before the test slice,
-after a washout of 50 samples (window) or 400 samples (recurrent).
-
-\subsection{Quantum reservoir}
-
-The reservoir has $n_{\mathrm{in}}=6$ input qubits, one per variable, and $n_{\mathrm{mem}}=6$ memory
-qubits, $q=\nQubits$. Each input $x$ is angle-encoded as $R_Y(\mathrm{clip}(s\,x,-\pi,\pi))|0\rangle$
-on its input qubit, with the encoding scale $s$ tuned in $[0.1,\pi]$. The system then evolves for a
-time $\tau$, tuned in $[0.1,10]$, under one of two Hamiltonians, both all-to-all:
+\paragraph{Quantum reservoir.} The reservoir has $n_{\mathrm{in}}=6$ input qubits, one per variable,
+and $n_{\mathrm{mem}}=6$ memory qubits. Each input $x$ is encoded as
+$R_Y(\mathrm{clip}(s\,x,-\pi,\pi))|0\rangle$ with $s\in[0.1,\pi]$ tuned, and the system evolves for
+a tuned time $\tau\in[0.1,10]$ under one of two all-to-all Hamiltonians,
 \begin{align}
 H_{\mathrm{XXZ}} &= \sum_{i<j} \left(X_iX_j + Y_iY_j + \Delta\, Z_iZ_j\right) + \sum_i h_i Z_i,
   \quad h_i\sim\mathcal{U}(-W,W),\\
 H_{\mathrm{Ising}} &= \sum_{i<j} J_{ij}\, X_iX_j + v\sum_i Z_i, \quad J_{ij}\sim\mathcal{U}(0,1),
 \end{align}
-with $\Delta\in[-2,2]$, $W\in[0.1,10]$ and $v\in[0.1,10]$ tuned. The random fields or couplings are
-drawn from the reservoir seed.
-
-\paragraph{Memory.} In the \emph{window} cells the memory is reset: at every step the memory qubits
+with $\Delta\in[-2,2]$, $W\in[0.1,10]$ and $v\in[0.1,10]$ tuned and the disorder drawn from the
+reservoir seed. In the \emph{window} cells the memory is reset: at every step the memory qubits
 start in $|0\rangle^{\otimes 6}$ and the last two inputs are driven in order, the input qubits being
-traced out between drives. The QRC is then a fixed feature map of a two-step input window. In the
-\emph{recurrent} cells the memory state is carried from step to step, one drive per step, and a
-feedback term shifts every input angle by $k_{\mathrm{fb}}\tanh(\bar m_{t-1})$, where $\bar m_{t-1}$
-is the mean measured $\langle Z\rangle$ of the previous step and $k_{\mathrm{fb}}\in[0,8]$ is tuned.
-
-\paragraph{Readout.} The Z/ZZ readout measures all twelve qubits in the computational basis and
-gives $\langle Z_i\rangle$ and $\langle Z_iZ_j\rangle$, $12+66=\widthZZ$ features. The Z/ZZ+X/XX
-readout measures the same block a second time in the $X$ basis, giving $\widthZX$ features. The
+traced out between drives, so the QRC is a fixed feature map of a two-step window. In the
+\emph{recurrent} cells the memory state is carried from step to step, and a feedback term shifts
+every input angle by $k_{\mathrm{fb}}\tanh(\bar m_{t-1})$, where $\bar m_{t-1}$ is the mean measured
+$\langle Z\rangle$ of the previous step and $k_{\mathrm{fb}}\in[0,8]$ is tuned. The Z/ZZ readout
+gives $\langle Z_i\rangle$ and $\langle Z_iZ_j\rangle$ on all twelve qubits, $\widthZZ$ features;
+the +X/XX readout measures the same block a second time in the $X$ basis, $\widthZX$ features. The
 feedback signal and the memory state stay on the $Z$ basis.
 
 \paragraph{Shots.} Every QRC feature in the eight cells is estimated from $1024\,q=\shots$ shots per
-step. With two bases the budget is split equally, $\shotsPerBasisZX$ per basis, so the second basis
-costs no extra shots. We use the restarting protocol~\cite{mujal2023}: each step's measurement is a
-fresh preparation of the same circuit, so the memory state carried to the next step is exact and is
-never collapsed, while the features and the feedback signal are both read from the sampled counts.
-The shot noise realisation is fixed by the reservoir seed. The exact-expectation runs of
-Section~\ref{sec:shots} read exact values with the same protocol block, but were made with an
-earlier pipeline commit (\texttt{\exactCommitWindow} against \texttt{\shotsCommitWindow}).
+step, split equally over the bases, so the second basis costs no extra shots. We use the restarting
+protocol~\cite{mujal2023}: each step's measurement is a fresh preparation of the same circuit, so the
+memory state carried forward is exact, while the features and the feedback signal are read from the
+sampled counts. The shot noise realisation is fixed by the reservoir seed.
 
-\subsection{Classical models}
+\paragraph{Classical models.} \emph{Random features (RF)}: $\tanh(A z_t + b)$, where $z_t$ stacks
+the same two-step window the QRC sees ($n=12$ values), $A_{ij}\sim\mathcal{N}(0,\sigma^2/n)$,
+$b_i\sim\mathcal{U}(-\beta,\beta)$, $\sigma\in[10^{-3},10]$ and $\beta\in[0,10]$ tuned, with the
+QRC's width. \emph{Poly2} and \emph{linear}: the complete degree-2 polynomial of the window (width
+$\widthPoly$) and the window itself (width $\widthLin$), with only the ridge penalty tuned; both have
+no reservoir seed. \emph{ESN}, recurrent cells only: a leaky echo-state network of the QRC's width,
+$r_t=(1-a)\,r_{t-1}+a\tanh(W r_{t-1}+W_{\mathrm{in}}x_t+b)$, with spectral radius in $[0.05,1.5]$,
+leak $a\in[0.01,1]$, input scale in $[0.01,5]$, density in $[0.02,1]$ and bias scale in $[0,10]$
+tuned. The window models remain as references in the recurrent cells.
 
-\paragraph{Random features.} $\tanh(A z_t + b)$, where $z_t$ stacks the same two-step window the
-QRC sees ($n=12$ values), $A_{ij}\sim\mathcal{N}(0,\sigma^2/n)$ and $b_i\sim\mathcal{U}(-\beta,\beta)$,
-with $\sigma\in[10^{-3},10]$ and $\beta\in[0,10]$ tuned. Its width equals the QRC width in every
-cell. This is the same-window, same-width control for the QRC.
+\paragraph{Tuning.} Every model is tuned by Optuna's TPE sampler~\cite{akiba2019} with the same
+sampler seed. The ridge penalty $\alpha\in[10^{-6},10^{2}]$ (log scale) is tuned for every model, on
+standardised features, and counts as a knob. The budget is matched by search density: a model with
+$d$ knobs gets at least $25d$ trials and continues until 50 trials pass without a new best, with a
+cap of 300; every model in the eight cells stopped on the patience rule. The objective is the
+validation $\nrmse$ over three rolling-origin folds (each 10 percent of the series, all before the
+test slice) and over three tuning data seeds $\times$ three tuning reservoir seeds. Each model's best
+setting is frozen and evaluated once on five fresh data seeds $\times$ five fresh reservoir seeds.
 
-\paragraph{Poly2 and linear.} The complete degree-2 polynomial of the window ($12$ linear terms and
-$78$ products, width $\widthPoly$) and the window itself (width $\widthLin$). Only the ridge penalty
-is tuned. Both are deterministic: they have no reservoir seed.
-
-\paragraph{Echo-state network.} In the recurrent cells, a leaky ESN of the same width as the QRC,
-$r_t=(1-a)\,r_{t-1}+a\tanh(W r_{t-1}+W_{\mathrm{in}}x_t+b)$, with spectral radius in $[0.05,1.5]$, leak
-$a\in[0.01,1]$, input scale in $[0.01,5]$, density in $[0.02,1]$ and bias scale in $[0,10]$ tuned. It
-sees the whole history, as the recurrent QRC does; the window models remain as references at a
-two-step window. (As tuned, the ESN's memory is short; see Section~\ref{sec:results}.)
-
-\subsection{Tuning}
-
-Every model is tuned by Optuna's TPE sampler~\cite{akiba2019} with the same sampler seed. The ridge
-penalty $\alpha$ is tuned in $[10^{-6},10^{2}]$ (log scale) for every model, on standardised
-features, and counts as a knob. The budget is matched by search density rather than trial count:
-a model with $d$ knobs gets at least $25d$ trials and continues until 50 trials pass without a new
-best, with a cap of 300. Every model in every cell stopped on the patience rule, after
-\trialsMinQrc{} to \trialsMaxQrc{} trials for the QRC, \trialsMinRf{} to \trialsMaxRf{} for the
-random features and \trialsMinEsn{} to \trialsMaxEsn{} for the ESN. The objective is the
-validation $\nrmse$ averaged over three rolling-origin folds (each 10 percent of the series, all
-before the test slice) and over three tuning data seeds $\times$ three tuning reservoir seeds. The
-best setting of each model is then frozen and evaluated once on five fresh data seeds $\times$ five
-fresh reservoir seeds, which share no seed with tuning.
-
-\subsection{Statistics}
-
-For each QRC-versus-classical pair we form the paired difference on each of the 25 evaluation runs
-and on each of the 5 data-seed clusters (the mean over that seed's five reservoir seeds). We report
-how many runs and data seeds the QRC wins (a difference within $5\times10^{-4}$ counts as a tie), a
-cluster bootstrap 95 percent interval (20000 resamples), and a paired $t$-test on the cluster means,
-Holm-corrected over the comparisons in the cell (three in a window cell, four in a recurrent cell).
-The Holm family is the cell, not the grid: the eight cells hold $\nTests$ tests in all, and no
-correction across cells is applied. The random-feature verdict survives any such correction: the
-largest uncorrected cluster-level $p$ against the random features, times $\nTests$, is $\bonfRf$.
-The weaker Poly2 results (Holm $p=\polyWeakPLo$ and $\polyWeakPHi$ in the recurrent two-basis cells)
-may not.
-For Poly2 and linear the five reservoir seeds of a data seed share one classical prediction, so the
-run-level tests are not independent; we flag them and use the cluster-level test throughout.
+\paragraph{Statistics.} For each QRC-versus-classical pair we form the paired difference on each of
+the 25 runs and on each of the 5 data-seed clusters. We count the runs and data seeds the QRC wins
+(differences within $5\times10^{-4}$ are ties) and apply a paired $t$-test to the cluster means,
+Holm-corrected within the cell (three comparisons in a window cell, four in a recurrent cell). No
+correction is applied across the $\nTests$ tests of the grid; the random-feature verdict survives
+even a Bonferroni factor of $\nTests$ (largest corrected $p$: $\bonfRf$), the two weakest Poly2
+results (Holm $p=\polyWeakPLo$ and $\polyWeakPHi$) may not. For Poly2 and linear the five reservoir seeds of a data seed share one prediction,
+so only the cluster-level test is independent; we use it throughout.
 
 \section{Results}
 \label{sec:results}
 
 \subsection{The eight cells}
 
-Table~\ref{tab:nrmse} gives the test $\nrmse$ of every model in every cell and
-Tables~\ref{tab:stats} and~\ref{tab:statsp} the paired statistics; Fig.~\ref{fig:cells} shows the same numbers.
+Table~\ref{tab:nrmse} and Fig.~\ref{fig:cells} give the test $\nrmse$ of every model in every cell;
+the paired win counts and Holm $p$ values are in Appendix~\ref{app:stats}
+(Tables~\ref{tab:stats} and~\ref{tab:statsp}).
 
 \begin{table}[htbp]
 \centering
-\caption{Test $\nrmse$ (mean $\pm$ s.d.\ over 25 evaluation runs, one-step ahead, lower is better)
-in the eight cells. QRC features are read from $\shots$ shots per step. Width is the QRC width, which
-the random features (RF) and the ESN match; readout ``+X/XX'' is Z/ZZ plus the $X$ basis. Poly2 has
-width $\widthPoly$ and linear $\widthLin$. Bold:
-best model in the cell. Poly2 and linear depend only on the data, so they repeat within a memory
-kind; the window and recurrent kinds use series of different length.}
+\caption{Test $\nrmse$ (mean $\pm$ s.d.\ over 25 runs, one step ahead, lower is better), QRC read
+from $\shots$ shots per step. Width is the QRC width, which the random features (RF) and the ESN
+match; ``+X/XX'' is Z/ZZ plus the $X$ basis. Bold: best model in the cell. Poly2 and linear depend
+only on the data, so they repeat within a memory kind.}
 \label{tab:nrmse}
 \footnotesize\setlength{\tabcolsep}{3pt}\input{tables/cells_nrmse.tex}
-\end{table}
-
-\begin{table}[htbp]
-\centering
-\caption{QRC wins against each classical model, per cell: evaluation runs (of 25) and, in
-parentheses, data seeds (of 5, by cluster mean) on which the QRC has the lower test $\nrmse$.
-$^\dagger$: the classical model has no reservoir seed, so run-level counts are not independent.}
-\label{tab:stats}
-\small
-\input{tables/cells_wins.tex}
-\end{table}
-
-\begin{table}[htbp]
-\centering
-\caption{Holm-corrected $p$ of the QRC against each classical model, per cell: paired $t$-test on
-the five data-seed means, Holm-corrected within the cell.}
-\label{tab:statsp}
-\small
-\input{tables/cells_p.tex}
 \end{table}
 
 \begin{figure}[htbp]
 \centering
 \includegraphics[width=\linewidth]{figures/fig_cells.pdf}
-\caption{Test $\nrmse$ per model in the eight cells (mean $\pm$ s.d.\ over 25 runs). The random
-features (hatched) are below the QRC (black) in every cell; the ESN is lowest in every recurrent
-cell.}
+\caption{Test $\nrmse$ per model in the eight cells (mean $\pm$ s.d.\ over 25 runs).}
 \label{fig:cells}
 \end{figure}
 
-\paragraph{Random features beat the QRC everywhere.} In every cell the width-matched random-feature
-map has the lower test $\nrmse$ on all 25 runs and all 5 data seeds, by $\minGapRf$ to $\maxGapRf$,
-with Holm-corrected $p\le\maxPRf$. The random features see exactly the same two-step window and have
-exactly the same number of features as the QRC, so neither input nor readout width explains the gap.
+\paragraph{Random features beat the QRC everywhere.} In every cell the random-feature map has the
+lower test $\nrmse$ on all 25 runs and all 5 data seeds, by $\minGapRf$ to $\maxGapRf$, with Holm
+$p\le\maxPRf$. It sees the same two-step window and has the same number of features, so neither
+input nor readout width explains the gap.
 
-\paragraph{The second basis is the QRC's largest gain, and it does not close the gap.}
-Table~\ref{tab:basis} compares each Z/ZZ cell with its Z/ZZ+X/XX partner. Adding the $X$ basis
-lowers the QRC's $\nrmse$ by $\gainQrcWindowXxz$ (window, XXZ), $\gainQrcWindowIsing$ (window,
-Ising), $\gainQrcRecurrentXxz$ (recurrent, XXZ) and $\gainQrcRecurrentIsing$ (recurrent, Ising),
-although each basis now gets half the shots. The largest of these is the largest change of the QRC
-between any two cells that differ in one factor. The
-width-matched classical models gain too, from the doubled width alone: the random features by
-$\gainRfWindowXxz$ (window) and $\gainRfRecurrentXxz$ (recurrent), the ESN by
-$\gainEsnRecurrentXxz$. In the recurrent cells the random features' gain is $\ratioRecMin$ to
-$\ratioRecMax$ percent of the QRC's, so the gap shrinks only by $\gapShrinkRecMin$ to
-$\gapShrinkRecMax$ (recurrent Ising: $\gapRfRecurrentIsingZZ$ to $\gapRfRecurrentIsingZX$). In the window cells the QRC gains
-$\ratioWinMin$ to $\ratioWinMax$ times as much as the random features, and the gap to them shrinks
-from $\gapRfWindowXxzZZ$ (XXZ) and $\gapRfWindowIsingZZ$ (Ising) to $\gapRfWindowXxzZX$ and
-$\gapRfWindowIsingZX$ (last two columns of Table~\ref{tab:basis}), but the QRC still loses on every
-seed.
+\paragraph{The second basis is the QRC's largest gain.} Adding the $X$ basis at half the shots per
+basis lowers the QRC's $\nrmse$ in all four pairs (Table~\ref{tab:basis}), and the largest of these
+drops is the largest change of the QRC between any two cells that differ in one factor. The
+width-matched classical models gain too, from the doubled width alone. In the window cells the QRC
+gains $\ratioWinMin$ to $\ratioWinMax$ times as much as the random features and the gap to them
+shrinks by $\gapShrinkWinPctMin$ to $\gapShrinkWinPctMax$ percent; in the recurrent cells the random features gain $\ratioRecMin$ to
+$\ratioRecMax$ percent as much as the QRC, so the gap shrinks only by $\gapShrinkRecMin$ to
+$\gapShrinkRecMax$. The QRC still loses on every seed.
 
 \begin{table}[htbp]
 \centering
-\caption{Effect of the second measurement basis. Columns 3 and 4: QRC test $\nrmse$ with one and
-two bases (width $\widthZZ$ and $\widthZX$, same total shots). Columns 5 to 7: change in mean test
-$\nrmse$ from Z/ZZ to Z/ZZ+X/XX for the QRC and for the width-matched random features (RF) and ESN,
-whose width doubles with the QRC's. Columns 8 and 9: QRC minus random-feature $\nrmse$.}
+\caption{Effect of the second basis (same total shots). Columns 3 and 4: QRC test $\nrmse$; columns
+5 to 7: change in mean test $\nrmse$ from Z/ZZ to +X/XX for the QRC and the width-matched RF and ESN;
+columns 8 and 9: QRC minus RF.}
 \label{tab:basis}
 \small
 \input{tables/basis_gain.tex}
 \end{table}
 
-\paragraph{The best QRC ties Poly2.} The best QRC cell (window, Ising, Z/ZZ+X/XX) reaches
-$\bestQrc$ against Poly2's $\bestPoly$. It wins \bestPolyRunWins{} of 25 runs, loses
-\bestPolyRunLosses{} and ties \bestPolyTies, and wins \bestPolySeedWins{} of 5 data seeds, but the
-cluster interval of the difference, $[\bestPolyCiLo,\bestPolyCiHi]$, contains zero and the Holm $p$
-is $\bestPolyP$: a tie. The random features in the same cell reach $\bestRf$. In every other cell
-Poly2 beats the QRC. Every QRC beats the linear model on every run.
+\paragraph{The best QRC ties Poly2.} In the best QRC cell (window, Ising, +X/XX) the QRC wins
+\bestPolyRunWins{} of 25 runs and \bestPolySeedWins{} of 5 data seeds against Poly2, but the cluster
+interval of the difference, $[\bestPolyCiLo,\bestPolyCiHi]$, contains zero and the Holm $p$ is
+$\bestPolyP$. In every other cell Poly2 has the lower mean. Every QRC beats the linear model on every
+run.
 
-\paragraph{The ESN wins the recurrent kind by a wide margin.} In the four recurrent cells the ESN of
-the same width is ahead of the recurrent QRC on every run and every data seed, by $\minGapEsn$ to
-$\maxGapEsn$ in $\nrmse$ (Tables~\ref{tab:stats} and~\ref{tab:statsp}). The ESN at width $\widthZX$ ($\esnZX$) is the best
-model in the whole grid. Its history is long only in name: as tuned, the spectral radius is about
+\paragraph{The ESN wins the recurrent kind.} The ESN is ahead of the recurrent QRC on every run and
+data seed of the four recurrent cells, by $\minGapEsn$ to $\maxGapEsn$, and at width $\widthZX$ it is
+the best model in the grid. Its history is long only in name: as tuned, the spectral radius is about
 $\esnSrLow$ and the leak $\esnLeakMin$ to $\esnLeakMax$, so the state keeps a weight of only
-$\esnKeepMin$ to $\esnKeepMax$ on its previous value plus a weak recurrent term, and the past fades
-within a few steps. The recurrent QRC is not better than the reset QRC with two bases either.
+$\esnKeepMin$ to $\esnKeepMax$ on its previous value plus a weak recurrent term. With two bases the
+recurrent QRC is no better than the reset one.
 
 \subsection{Shot noise}
 \label{sec:shots}
 
-Table~\ref{tab:shots} and Fig.~\ref{fig:shots} compare the XXZ, Z/ZZ cells with runs that read exact
-expectation values under the same protocol block but an earlier pipeline commit
-(\texttt{\exactCommitWindow} against \texttt{\shotsCommitWindow}); in both conditions the QRC is tuned under the
-condition it is evaluated in. The reset QRC loses $\shotLossWindow$ in $\nrmse$ to the shots
-($\exactQrcWindow\to\shotsQrcWindow$), the recurrent QRC $\shotLossRecurrent$
-($\exactQrcRecurrent\to\shotsQrcRecurrent$). The difference is consistent with the role of feedback:
-in the recurrent cells the feedback signal is read from the sampled counts, so measurement noise
-enters the drive and is carried forward in the memory state, while in the reset cells it touches
-only the readout. We have not run the ablation that separates the two (sampled readout with exact
-feedback), so this is the likely mechanism, not a measured one.
-
-The shots change the verdict, not only the number. With exact expectations the recurrent QRC
-\emph{ties} the random features: it wins \exactWinsRfRecurrent{} of 25 runs and
-\exactClusterWinsRfRecurrent{} of 5 data seeds, Holm $p=\exactPRfRecurrent$. With $\shots$ shots it
-loses to them on every run. A study that reported exact values would have found parity with a
-tuned, width-matched classical model where hardware would find a loss.
-
-The classical models do not use shots. In the recurrent pair their rows are identical. In the
-window pair Poly2 and linear are identical; the random features differ ($\exactRfWindow$ against $\shotsRfWindow$)
-because the exact run was made with an earlier pipeline version that searched a narrower
-random-feature range (scale $\ge\exactRfScaleLowWindow$, bias scale $\le\exactRfBiasHighWindow$).
+Table~\ref{tab:shots} and Fig.~\ref{fig:shots} compare the two XXZ, Z/ZZ cells with exact-expectation
+runs of the same protocol; in both conditions the QRC is tuned under the condition it is evaluated
+in, and the classical rows are identical. The shots cost the reset QRC $\shotLossWindow$ in $\nrmse$
+and the recurrent QRC $\shotLossRecurrent$. This is consistent with the feedback path: in the
+recurrent cells the feedback signal is read from the sampled counts, so measurement noise enters the
+drive and is carried in the memory state, while in the reset cells it touches only the readout. We
+did not run the ablation with sampled readout and exact feedback, so the mechanism is likely, not
+measured. The shots also change the verdict: with exact values the recurrent QRC ties the random
+features (it wins \exactWinsRfRecurrent{} of 25 runs and \exactClusterWinsRfRecurrent{} of 5 data
+seeds, Holm $p=\exactPRfRecurrent$); with shots it loses to them on every run.
 
 \begin{table}[htbp]
 \centering
-\caption{Exact expectation values against $\shots$ shots per step, XXZ reservoir, Z/ZZ readout. Mean
-test $\nrmse$ over 25 runs; ``change'' is shots minus exact. In the window pair the random features
-of the exact run were tuned over a narrower range (see text).}
+\caption{Exact expectation values against $\shots$ shots per step, XXZ reservoir, Z/ZZ readout: mean
+test $\nrmse$ over 25 runs; ``change'' is shots minus exact.}
 \label{tab:shots}
 \small
 \input{tables/shots.tex}
@@ -385,241 +301,146 @@ of the exact run were tuned over a narrower range (see text).}
 \centering
 \includegraphics[width=\linewidth]{figures/fig_shots.pdf}
 \caption{Exact expectation values (white) against $\shots$ shots per step (hatched), XXZ reservoir,
-Z/ZZ readout (mean $\pm$ s.d.\ over 25 runs). Only the QRC changes, and the recurrent QRC changes
-most.}
+Z/ZZ readout (mean $\pm$ s.d.\ over 25 runs). Only the QRC changes.}
 \label{fig:shots}
 \end{figure}
 
-\subsection{Is the search finished? A local refinement stage}
+\subsection{Is the search finished?}
 \label{sec:refine}
 
-A tuned comparison is only as good as its search. To test whether TPE had stopped short, we
-repeated the best QRC cell (window, Ising, Z/ZZ+X/XX) with a refinement stage: after TPE stops, SPSA
-runs from the best TPE trial in the unit cube of each model's search space, with half the model's
-floor budget, rounded down to an even number, in further evaluations, for every model. The TPE stage of this run reproduced the
-original run trial for trial, so the refinement starts from the same point.
-
-The refinement improved no model: the gain is $0$ for all four (Table~\ref{tab:refine},
-Fig.~\ref{fig:conv}). The landscapes near the optimum are flat for the classical models:
-\flatRf{} percent of the random features' TPE trials, \flatPoly{} percent of Poly2's and \flatLin{}
-percent of the linear model's lie within $0.02$ of their best validation $\nrmse$. The QRC's landscape
-is rougher, with \flatQrc{} percent of its trials within $0.02$, but a local search from its best
-point finds nothing either. Since the frozen settings did not change, the test results of this run
-are identical to those of the cell in Table~\ref{tab:nrmse}.
+\paragraph{Local refinement.} We repeated the best QRC cell with a refinement stage: after TPE
+stops, SPSA runs from each model's best TPE trial in the unit cube of its search space, with half the
+model's floor budget, rounded down to an even number, in further evaluations. The TPE stage
+reproduced the original run trial for trial. The refinement improved no model
+(Table~\ref{tab:refine}, Fig.~\ref{fig:conv}). Near the optimum the classical landscapes are flat
+(\flatRf{} to \flatLin{} percent of TPE trials within $0.02$ of the best validation $\nrmse$); the
+QRC's is rougher (\flatQrc{} percent), but a local search from its best point finds nothing either.
 
 \begin{table}[htbp]
 \centering
-\caption{SPSA refinement after TPE, window, Ising, Z/ZZ+X/XX. Knobs include the ridge penalty.
-Validation $\nrmse$ is the tuning objective. ``within 0.02'': fraction of TPE trials whose
-validation $\nrmse$ is within $0.02$ of the best TPE trial.}
+\caption{SPSA refinement after TPE, window, Ising, +X/XX. Knobs include the ridge penalty;
+``within 0.02'': fraction of TPE trials within $0.02$ of the best validation $\nrmse$.}
 \label{tab:refine}
 \footnotesize\setlength{\tabcolsep}{3pt}\input{tables/refine.tex}
 \end{table}
 
 \begin{figure}[htbp]
 \centering
-\includegraphics[width=0.6\linewidth]{figures/fig_convergence.pdf}
-\caption{Best validation $\nrmse$ so far against trial number, window, Ising, Z/ZZ+X/XX, for the QRC
-(solid) and the random features (dashed). The vertical lines mark where TPE stopped and SPSA
-started for each model; neither curve moves after them.}
+\includegraphics[width=0.5\linewidth]{figures/fig_convergence.pdf}
+\caption{Best validation $\nrmse$ so far, window, Ising, +X/XX, for the QRC (solid) and the random
+features (dashed). Vertical lines: where TPE stopped and SPSA started.}
 \label{fig:conv}
 \end{figure}
+
+\paragraph{Widened ranges.} In the two-basis Ising cells the tuned field sat at the top of its range
+($v\le\vHigh$), and the ESN's spectral radius and bias scale at the bottom and top of theirs. We
+reran both cells with $v\in[\wideVLow,\wideVHigh]$, ESN spectral radius in
+$[\wideSrLow,\wideSrHigh]$, ESN bias scale in $[0,\wideBiasHigh]$ and ridge penalty in
+$[\wideAlphaLow,10^{2}]$ for every model, all else unchanged (Table~\ref{tab:wide}). The field moved
+well inside the new range and the ESN bias scale inside its range; the ESN spectral radius moved down
+but stays near its new lower bound. No verdict against the random features or the ESN changed: the
+QRC wins no data seed against either. Against Poly2 the window cell remains a tie, and the recurrent
+cell moves from a loss (Holm $p=\wideOldPolyPRec$) to a tie (Holm $p=\wideNewPolyPRec$). In the
+recurrent cell the random features stopped on the 300-trial cap rather than on the patience rule.
+
+\begin{table}[htbp]
+\centering
+\caption{Widened ranges, two-basis Ising cells: published ranges (``orig.'') against widened
+(``wide''). Test $\nrmse$ (mean over 25 runs), QRC data-seed wins (of 5) and Holm $p$ against each
+model, and the tuned field $v$ and ESN spectral radius and bias scale.}
+\label{tab:wide}
+\footnotesize\setlength{\tabcolsep}{3pt}\input{tables/wide.tex}
+\end{table}
 
 \subsection{Free-running forecasts}
 \label{sec:vpt}
 
-A one-step score does not say how long a model stays useful when it is fed its own output. We
-therefore ran every frozen model of the eight cells autonomously. The readout is the one fit for
-the test score. From each of $\nStarts$ starts spread evenly over the test slice the model predicts
-the next sample from the true history, and from then on each prediction is fed back as the next
-input. The window models rebuild their features from the last two inputs, the QRC drawing fresh
-shots at every step; the recurrent QRC and the ESN are first run over the true data up to the start
-and then continue from their own state, the recurrent QRC also resampling its shots every step. The
-valid prediction time (VPT) is the number of steps before the error, the RMS over the six variables
-of the error divided by each variable's test-slice s.d., first exceeds $\vptThreshold$, over a
-horizon of $\horizonLt$ Lyapunov times ($\horizonSteps$ steps). It is averaged over the starts of a
-run and reported in Lyapunov times. The largest Lyapunov exponent of the task's own integrator
-(Benettin's method on the same RK4 step) is $\lambda=\lyapExp$ for $K=6$, $F=8$, so one Lyapunov
-time is $\lyapTimeSteps$ samples. As a check, the same routine gives $1.70$ for $K=40$, $F=8$,
-close to the value of about $1.68$ reported for that system~\cite{vlachas2020}. Paired statistics
-are those of Section~\ref{sec:protocol}, applied to the VPT (Tables~\ref{tab:vpt},
-\ref{tab:vptstats} and~\ref{tab:vptp}).
-
-\paragraph{No model forecasts far.} No model's mean VPT reaches one Lyapunov time. The best is
-the ESN at width $\widthZX$, $\vptBest$ Lyapunov times, and the longest mean VPT of any single run
-is $\vptMaxRun$. One sample is $\sampleLt$ Lyapunov times, so these readouts, trained for one step
-at this coarse sampling, stay valid for at most a few steps. They are poor autonomous forecasters,
-and the free run compares them with each other, not with forecasters built for long horizons.
-
-\paragraph{The ordering against the random features and the ESN holds.} In every recurrent cell the ESN has the longest VPT,
-then the random features, then the QRC; the QRC wins no data seed against the ESN and at most
-$\vptRecZZRfSeedWinsMax$ of 5 against the random features. With one basis the recurrent QRC's
-deficit against the random features is not significant (Holm $p$ from $\vptPRfZZRecurrentLo$ to
-$\vptPRfZZRecurrentHi$); with two it is ($p$ from $\vptPRfZXRecurrentLo$ to
-$\vptPRfZXRecurrentHi$). In every window cell the random features outlast the QRC, decisively with
-one basis ($p\le\vptPRfZZWindowHi$, where the QRC's VPT of $\vptQrcWinZZMin$ to $\vptQrcWinZZMax$
-Lyapunov times is close to the linear model's) and narrowly with two ($p$ from $\vptPRfZXWindowLo$
-to $\vptPRfZXWindowHi$). With one basis the QRC also loses its one-step lead over the simpler models:
-in the window cells it ties the linear model (XXZ: \vptTieLinXxzWins{} of 25 runs,
-\vptTieLinXxzSeeds{} of 5 seeds, Holm $p=\vptTieLinXxzP$; Ising: \vptTieLinIsingWins{} runs,
-\vptTieLinIsingSeeds{} seeds, $p=\vptTieLinIsingP$), and in the recurrent cells it ties Poly2 (XXZ:
-\vptTiePolyXxzWins{} runs, \vptTiePolyXxzSeeds{} seeds, $p=\vptTiePolyXxzP$; Ising:
-\vptTiePolyIsingWins{} runs, \vptTiePolyIsingSeeds{} seeds, $p=\vptTiePolyIsingP$).
-
-\paragraph{Poly2 does not survive its own output.} With the second basis the QRC outlasts Poly2 on
-all 25 runs and all 5 data seeds in all four cells, the one place in the grid where the QRC beats a
-classical model other than the linear one. The reason is Poly2, not the QRC: fed its own
-predictions, the quadratic map diverges, with a mean NRMSE of $\polyNrmseOneLtWindow$ (window) and
-$\polyNrmseOneLtRecurrent$ (recurrent) after one Lyapunov time. With one basis the QRC loses to
-Poly2 in the window cells ($p\le\vptPPolyZZWindowHi$) and ties it in the recurrent cells ($p$ from
-$\vptPPolyZZRecurrentLo$ to $\vptPPolyZZRecurrentHi$). The random-feature map, which also has bounded
-features, keeps its lead over the QRC.
-
-\paragraph{Caveat on the horizon.} One sample is $\sampleEvery$ integrator steps of $0.01$, so a
-Lyapunov time is only $\lyapTimeSteps$ samples, and the models are tuned for one step at that
-spacing. Ahmed et al.~\cite{ahmed2024} sample at $0.01$ time units and run their reservoirs in closed
-loop; they report VPTs of up to about $8.5$ Lyapunov times on Lorenz-63 for both
-quantum and classical reservoirs. Our VPTs are much shorter and are not comparable with theirs;
-they compare the models of this grid with one another.
+We ran every frozen model autonomously from $\nStarts$ starts in the test slice: the model predicts
+the next sample from the true history and then feeds each prediction back as its next input
+(recurrent models are first warmed on the true data; the QRC draws fresh shots every step). The valid
+prediction time (VPT) is the time before the error, the RMS over variables of the error scaled by
+each variable's test-slice s.d., first exceeds $\vptThreshold$, within $\horizonLt$ Lyapunov times.
+The largest Lyapunov exponent of the task's own integrator (Benettin's method on the same RK4 step) is
+$\lambda=\lyapExp$, so a Lyapunov time is $\lyapTimeSteps$ samples; the same routine gives $1.70$ for
+$K=40$, close to the value of about $1.68$ reported for that system~\cite{vlachas2020}. No model's
+mean VPT reaches one Lyapunov time (Table~\ref{tab:vpt}; the ESN is longest at $\vptBest$), so these
+one-step readouts are poor autonomous forecasters at this sampling. The ordering against the
+stronger models holds: in every cell the random features outlast the QRC (significantly in
+\vptSigRfCells{} of 8; Appendix~\ref{app:stats}), and in every recurrent cell the ESN outlasts both.
+With one basis the QRC falls to the level of the simpler models, tying the linear model in the
+window cells and Poly2 in the recurrent cells; with two it outlasts Poly2 on every run, because Poly2
+diverges when fed its own output (mean $\nrmse$ $\polyNrmseOneLtWindow$ after one Lyapunov time in the
+window cells). The coarse sampling also makes these horizons far shorter than those of
+Ahmed et al.~\cite{ahmed2024}, who sample every $0.01$ time units and report VPTs of up to about $8.5$
+Lyapunov times on Lorenz-63; our VPTs compare the models of this grid with each other, not with that
+work.
 
 \begin{table}[htbp]
 \centering
-\caption{Free-running forecasts: mean VPT in Lyapunov times $\pm$ s.d.\ over the 25 evaluation
-runs, with the mean VPT in samples in parentheses ($\lyapTimeSteps$ samples per Lyapunov time;
-$\nStarts$ starts per run, threshold $\vptThreshold$). Bold: longest VPT in the cell.}
+\caption{Free run: mean VPT in Lyapunov times $\pm$ s.d.\ over 25 runs, mean in samples in
+parentheses ($\nStarts$ starts per run, threshold $\vptThreshold$). Bold: longest in the cell.}
 \label{tab:vpt}
 \footnotesize\setlength{\tabcolsep}{3pt}\input{tables/vpt.tex}
-\end{table}
-
-\begin{table}[htbp]
-\centering
-\caption{QRC wins on VPT against each classical model, per cell: runs (of 25) and, in
-parentheses, data seeds (of 5) on which the QRC's VPT is the longer. $^\dagger$ as in
-Table~\ref{tab:stats}.}
-\label{tab:vptstats}
-\small
-\input{tables/vpt_wins.tex}
-\end{table}
-
-\begin{table}[htbp]
-\centering
-\caption{Holm-corrected $p$ of the QRC against each classical model on VPT, per cell, as in
-Table~\ref{tab:statsp}.}
-\label{tab:vptp}
-\small
-\input{tables/vpt_p.tex}
 \end{table}
 
 \section{Discussion}
 \label{sec:discussion}
 
-\subsection{What would it take for the QRC to win here?}
+\paragraph{What would it take for the QRC to win here?} Halving the shots per basis to add a basis
+helped in every cell, and most in the window cells, which suggests that there the limit is what is
+measured rather than how precisely. The gain is confounded with the doubled width, since we did not
+run a one-basis QRC of width $\widthZX$, and the width-matched classical models gain from width too;
+a third basis must add more than width does. Wider ranges improved the QRC only within the
+verdicts it already had (Section~\ref{sec:refine}).
+On hardware the restarting protocol is costly for the recurrent QRC: the circuit of step $t$
+replays all $t$ drives, so one series of $\recSteps$ steps needs about $\replayDrives$ drives per shot
+round, each repeated $\shots$ times; the reset QRC needs two drives per step. The recurrent QRC is
+thus the more expensive scheme and, with two bases, not the better one. Weak-measurement and
+rewinding protocols~\cite{mujal2023} reduce the replay cost at the price of extra noise. Finally, the
+models are tuned for one step; a fair long-horizon test would sample finely and tune every model on
+the free-running metric.
 
-\paragraph{More bases, not more shots per basis.} Halving the shots per basis to add the $X$ basis
-lowered the QRC's error in every cell. In the window cells, where the gain is large, this suggests
-that at $\shots$ shots per step the binding limit is what is measured, not how precisely. The
-X-basis gain is, however, confounded with the doubled width: we did not run a one-basis QRC of width
-$\widthZX$, so how much of the gain is the new basis and how much is more features is not separated.
-A third basis is the obvious next test. The comparison has to stay
-width-matched, though: the random features gained $\gainRfWindowXxz$ to $\gainRfRecurrentXxz$ from
-the doubled width alone, so a new basis must add more than width does.
-
-\paragraph{Ranges at their edges.} In the two-basis cells the tuned reservoir parameters sit at the
-top of their ranges: $v=\vWinIsingZX$ (window, Ising) and $v=\vRecIsingZX$ (recurrent, Ising) with
-$v\le\vHigh$, and $W=\WRecXxzZX$ (recurrent, XXZ) with $W\le\WHigh$. The QRC optimum may lie
-outside the searched range. The same holds for the ESN, whose spectral radius sits at
-$\esnSrMax$ or below against a lower bound of $\esnSrLow$ and whose bias scale sits at $\esnBiasMin$
-or above against an upper bound of $\esnBiasHigh$ in every recurrent cell. The ridge penalty sits at
-its lower bound $\alphaLow$ (at most $\alphaEdgeMax$) for the random features in all four one-basis
-cells and for the QRC in the window, XXZ, two-basis cell. Widening the ranges is cheap and should be
-done for both sides together.
-
-\paragraph{The hardware cost of the restarting protocol.} The restarting protocol keeps the
-simulated memory exact, but on hardware each measured step is a separate preparation. For the reset
-QRC each step circuit has two drives, so the cost is $\shots$ shots of a short circuit per step. For
-the recurrent QRC the circuit of step $t$ replays all $t$ drives before it, so one series of
-$\recSteps$ steps needs $\recSteps(\recSteps+1)/2\approx\replayDrives$ drives per shot round, each
-repeated $\shots$ times, and the feedback angles must be fixed from the counts of earlier steps.
-The recurrent QRC is thus the more expensive of the two memory schemes and, with two bases, also
-the weaker. Weak-measurement and rewinding protocols~\cite{mujal2023} reduce the replay cost; whether
-their extra noise leaves the QRC competitive is open.
-
-\paragraph{One step against many.} The models are tuned for one step, and at our sampling none of
-them stays valid in free run for one Lyapunov time (Section~\ref{sec:vpt}). The free run keeps the
-one-step ordering against the random features and the ESN, so it gives the QRC no hidden advantage.
-A fair test of long-horizon forecasting would sample finely, as Ahmed et al.~\cite{ahmed2024} do,
-and tune every model on the free-running metric itself.
-
-\subsection{Why earlier claims differ}
-\label{sec:why}
-
-The six patterns of Section~\ref{sec:related} each predict a direction in our grid.
-\emph{Resource units} (pattern 1): matching features rather than qubits against neurons removes
-the readout-size difference; at equal width the random features win.
-\emph{Baseline tuning} (pattern 2): our own records show how much one knob matters. In the first
-exact-expectation run of the recurrent XXZ cell the ESN had no bias term; it reached
-$\noBiasEsn$ against the QRC's $\noBiasQrc$, and the QRC won \noBiasQrcWins{} of 25 runs. Adding the
-bias scale to the ESN's search, with the QRC unchanged, gives $\biasEsn$, and the ESN wins every run
-(Section~\ref{sec:repro} lists both records).
-\emph{QRC against QRC} (pattern 3): the second basis is a real gain over the one-basis QRC, and
-reporting it against that baseline alone would read as a success; against the width-matched random
-features it is not.
-\emph{Capacity metrics} (pattern 4): we report forecast error only, and the gap to a classical model
-is what decides the comparison.
-\emph{Exact expectations} (pattern 5): Section~\ref{sec:shots} shows a tie under exact values
-becoming a loss on every seed under shots.
-\emph{Few seeds} (pattern 6): the s.d.\ over runs is $\qrcSdMin$ to $\qrcSdMax$ for the QRC
-(Table~\ref{tab:nrmse}), so single-run gaps smaller than that are not interpretable; the margins we
-report are larger than the run-to-run spread and hold on every data seed.
+\paragraph{Why earlier claims differ.} The six patterns of Section~\ref{sec:related} each predict a
+direction in our grid. \emph{Resource units}: at equal feature width the random features win.
+\emph{Baseline tuning}: in our first exact-expectation run of the recurrent XXZ cell the ESN had no
+bias term and reached $\noBiasEsn$ against the QRC's $\noBiasQrc$, the QRC winning \noBiasQrcWins{}
+of 25 runs; adding the bias scale to the ESN's search, with the QRC's result unchanged, gives
+$\biasEsn$ and an ESN win on every run. \emph{QRC against QRC}: the second basis is a real gain over
+the one-basis QRC, which would read as a success against that baseline alone. \emph{Capacity
+metrics}: we report forecast error only. \emph{Exact expectations}: Section~\ref{sec:shots} shows a
+tie under exact values becoming a loss on every seed under shots. \emph{Few seeds}: the QRC's s.d.\
+over runs is $\qrcSdMin$ to $\qrcSdMax$, so single-run gaps smaller than that are not interpretable;
+the margins we report are larger and hold on every data seed.
 
 \section{Limitations}
 \label{sec:limits}
 
-The study has one task (Lorenz-96 with $K=6$ and $F=8$), one system size ($q=\nQubits$), one input
-window (two steps), two reservoir families with all-to-all couplings, and one tuning horizon (one
-step). The free-running test uses coarse sampling (one sample per $\sampleEvery$ integrator steps,
-$\lyapTimeSteps$ samples per Lyapunov time), so its VPTs resolve only a few steps, and it uses a
-single error threshold ($\vptThreshold$); models tuned for free running at finer sampling might rank
-differently. The searched ranges are finite, and several optima sit at
-their edges on both the quantum and the classical side. Shots are simulated by sampling from the
-exact state; there is no gate, readout or decoherence noise, so hardware results would be worse for
-the QRC, not better. The feedback-noise explanation of Section~\ref{sec:shots} is not tested by an
-ablation. All shot results use one budget ($\shots$ per step); the shot-noise contrast rests on one
-XXZ, single-basis pair per memory scheme, and the refinement stage was tested in one cell. The Holm
-correction is applied within each cell, with no correction across the $\nTests$ tests of the grid.
-For scale, the no-change forecast scores $\nrmse$ $\persMin$ to $\persMax$ on the test slices: at
-this sampling the last value is a worse forecast than the mean, so one step ahead is already a
-long way on this attractor. The exact-expectation reference for the window cell used a narrower random-feature
-range than the shot runs. The results say nothing about larger reservoirs, other encodings, quantum
-input data or other tasks.
+The study has one task (Lorenz-96, $K=6$, $F=8$), one system size ($q=\nQubits$), one input window
+(two steps), two reservoir families with all-to-all couplings, one shot budget, and one tuning
+horizon (one step). The free-running test uses coarse sampling, so its VPTs resolve only a few
+steps, and a single error threshold. The shot-noise contrast rests on one single-basis XXZ pair per
+memory scheme, the feedback-noise mechanism is not tested by an ablation, and the refinement stage
+and the widened ranges were each tested in one or two cells. The Holm correction is applied within
+cells, not across the grid. Shots are sampled from the exact state, with no gate, readout or
+decoherence noise, so hardware would be harder on the QRC, not easier. For scale, the no-change
+forecast scores $\nrmse$ $\persMin$ to $\persMax$ on the test slices: at this sampling the last value
+is a worse forecast than the mean. The results say nothing about larger reservoirs, other encodings,
+quantum input data or other tasks.
 
 \section{Reproducibility}
 \label{sec:repro}
 
 All runs use the \texttt{qrc\_bench} pipeline
 (\url{https://github.com/pandey-tushar/Quantum_Chaos_solver}). Each record stores its protocol, the
-full trial history of every model, the per-run test scores, package versions, the GPU and the git
-commit of the pipeline (Table~\ref{tab:repro}). The runs used one NVIDIA GeForce \gpu{} GPU with 4 GB
-of memory; the records listed take $\totalHours$ hours of wall time in total, almost all of it in
-the QRC's tuning. Two records need a note. The record \texttt{l96\_recurrent\_xxz\_v2} reloaded the
-completed QRC study of \texttt{l96\_recurrent\_xxz} (its QRC tuning took $\vTwoQrcStudySeconds$ s;
-the original took $\noBiasQrcStudyHours$ h) and re-tuned the classical models with the ESN bias
-knob and the wider random-feature range; it carries the same commit as the earlier record, so these
-changes were not yet committed when it ran. The refinement record carries commit
-\texttt{bccf36d}; its SPSA stage ran from changes on top of that commit, later committed as
-\texttt{df03eeb}. The free-run records (\texttt{freerun\_<kind>.json} next to each cell's record)
-carry commit \texttt{\freerunCommit}; the free-run code ran from changes not yet committed on top
-of it, and the eight free runs took $\freerunHours$ h in total. This paper's tables and inline numbers are generated by \texttt{make\_tables.py}
-and its figures by \texttt{make\_figures.py}, both of which read the records directly.
-
-\begin{table}[htbp]
-\centering
-\caption{Records, pipeline commit (\texttt{environment.git\_commit}), total wall time
-(\texttt{total\_seconds}) and the QRC's tuning time.}
-\label{tab:repro}
-\small
-\input{tables/repro.tex}
-\end{table}
+trial history of every model, the per-run test scores, package versions, the GPU and the pipeline's
+git commit (Table~\ref{tab:repro}, Appendix~\ref{app:stats}). The runs used one NVIDIA GeForce
+\gpu{} GPU with 4 GB of memory; the comparison records take $\totalHours$ hours of wall time in
+total, almost all of it in the QRC's tuning, and the eight free runs $\freerunHours$ h. Two records
+ran from changes later committed: the refinement record carries commit \texttt{\refineCommit}, its
+SPSA stage committed as \texttt{df03eeb}; the free-run records carry \texttt{\freerunCommit}, the
+free-run code committed as \texttt{752b50b}. The tables and inline numbers of this paper are
+generated by \texttt{make\_tables.py} and its figures by \texttt{make\_figures.py}, both reading the
+records directly.
 
 \section*{Acknowledgment}
 
@@ -628,5 +449,55 @@ with drafting. All technical content, results, and conclusions are the author's 
 
 \bibliographystyle{unsrt}
 \bibliography{refs}
+
+\appendix
+
+\section{Paired statistics and records}
+\label{app:stats}
+
+\begin{table}[htbp]
+\centering
+\caption{One step: QRC wins against each classical model, runs (of 25) and, in parentheses, data
+seeds (of 5). $^\dagger$: the classical model has no reservoir seed, so run-level counts are not
+independent.}
+\label{tab:stats}
+\small
+\input{tables/cells_wins.tex}
+\end{table}
+
+\begin{table}[htbp]
+\centering
+\caption{One step: Holm-corrected $p$ of the QRC against each classical model (paired $t$-test on
+the five data-seed means, Holm within the cell).}
+\label{tab:statsp}
+\small
+\input{tables/cells_p.tex}
+\end{table}
+
+\begin{table}[htbp]
+\centering
+\caption{Free run: QRC wins on VPT against each classical model, as in Table~\ref{tab:stats}.}
+\label{tab:vptstats}
+\small
+\input{tables/vpt_wins.tex}
+\end{table}
+
+\begin{table}[htbp]
+\centering
+\caption{Free run: Holm-corrected $p$ on VPT, as in Table~\ref{tab:statsp}.}
+\label{tab:vptp}
+\small
+\input{tables/vpt_p.tex}
+\end{table}
+
+\begin{table}[htbp]
+\centering
+\caption{Records, pipeline commit (\texttt{environment.git\_commit}), total wall time
+(\texttt{total\_seconds}) and the QRC's tuning time. \texttt{l96\_recurrent\_xxz} is the earlier
+exact run whose ESN had no bias knob.}
+\label{tab:repro}
+\small
+\input{tables/repro.tex}
+\end{table}
 
 \end{document}
