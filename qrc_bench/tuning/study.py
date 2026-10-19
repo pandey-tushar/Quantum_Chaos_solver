@@ -7,7 +7,8 @@ folds) and ridge alpha range. Evaluation seeds never enter tuning.
 The trial budget is per model, not shared: an equal count would search a one-knob model exhaustively
 and a five-knob model sparsely, so each model gets ``trials_per_dim`` trials per knob it tunes and
 keeps going while it is still finding new bests. ``best_so_far`` records the convergence curve, so
-"tuned until tuning stopped helping" is evidence rather than an assumption.
+"tuned until tuning stopped helping" is evidence rather than an assumption. With ``refine="spsa"``
+every model's best TPE trial is then refined by the same SPSA local search, run as ordinary trials.
 """
 from __future__ import annotations
 
@@ -31,7 +32,12 @@ BUDGET_KEYS = ("n_trials", "trials_per_dim", "patience", "max_trials")
 
 
 def _complete(study):
-    return [t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE]
+    """Completed TPE trials; the SPSA trials of the refine stage are not part of the TPE budget."""
+    return [t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE and "refine" not in t.user_attrs]
+
+
+def _best(trials):
+    return min(trials, key=lambda t: t.value)
 
 
 def _run_budget(study, objective, proto: Protocol) -> dict:
@@ -40,7 +46,8 @@ def _run_budget(study, objective, proto: Protocol) -> dict:
     ``trials_per_dim`` trials per tuned knob and keeps going while it is still improving.
     """
     if proto.n_trials is not None:
-        remaining = proto.n_trials - len([t for t in study.trials if t.state.is_finished()])
+        remaining = proto.n_trials - len([t for t in study.trials if t.state.is_finished()
+                                          and "refine" not in t.user_attrs])
         if remaining > 0:
             study.optimize(objective, n_trials=remaining)
         n_dims = len(_complete(study)[0].distributions) if _complete(study) else 0
@@ -57,20 +64,96 @@ def _run_budget(study, objective, proto: Protocol) -> dict:
         done = len(_complete(st))
         if done >= proto.max_trials:
             st.stop()
-        elif done >= floor and trial.number - st.best_trial.number >= proto.patience:
+        elif done >= floor and trial.number - _best(_complete(st)).number >= proto.patience:
             state["stopped"] = "patience"
             st.stop()
 
     done = _complete(study)
     if len(done) >= proto.max_trials:
         pass                                       # a resumed study that already hit the cap
-    elif len(done) >= floor and done[-1].number - study.best_trial.number >= proto.patience:
+    elif len(done) >= floor and done[-1].number - _best(done).number >= proto.patience:
         state["stopped"] = "patience"              # a resumed study that had already converged
     else:
-        remaining = proto.max_trials - len([t for t in study.trials if t.state.is_finished()])
+        remaining = proto.max_trials - len([t for t in study.trials if t.state.is_finished()
+                                            and "refine" not in t.user_attrs])
         study.optimize(objective, n_trials=remaining, callbacks=[stop_when_converged])
     return {"rule": "per_dim", "n_dims": n_dims, "floor": floor, "trials_per_dim": proto.trials_per_dim,
             "patience": proto.patience, "max_trials": proto.max_trials, "stopped": state["stopped"]}
+
+
+def _bounds(d):
+    return (np.log10(d.low), np.log10(d.high)) if d.log else (d.low, d.high)
+
+
+def _from_cube(u, d) -> float:
+    """Unit-cube coordinate to a FloatDistribution value, uniform in log10 for a log knob."""
+    lo, hi = _bounds(d)
+    x = lo + u * (hi - lo)
+    return float(np.clip(10 ** x if d.log else x, d.low, d.high))
+
+
+def _to_cube(x, d) -> float:
+    lo, hi = _bounds(d)
+    return float(((np.log10(x) if d.log else x) - lo) / (hi - lo))
+
+
+def _spsa(f, x0, budget: int, seed: int):
+    """SPSA on the unit cube from ``x0``: two evaluations per iteration, ``budget // 2`` iterations.
+    The step is normalised (a_k in cube units), so it does not depend on the objective's scale.
+    A non-finite value counts as the worst finite value seen (1e3 before any). Returns the best
+    evaluated point, its value and every evaluated point in order."""
+    rng = np.random.default_rng(seed)
+    theta = np.asarray(x0, dtype=float)
+    best_x, best_v, points, seen = theta, np.inf, [], []
+    for k in range(budget // 2):
+        delta = rng.choice([-1.0, 1.0], size=theta.size)
+        c = 0.05 / (k + 1) ** 0.101
+        vals = []
+        for x in (np.clip(theta + c * delta, 0, 1), np.clip(theta - c * delta, 0, 1)):
+            v = f(x)
+            points.append(x)
+            if np.isfinite(v):
+                seen.append(v)
+                if v < best_v:
+                    best_x, best_v = x, v
+            else:
+                v = max(seen, default=1e3)
+            vals.append(v)
+        g = (vals[0] - vals[1]) / (2 * c) * delta
+        theta = np.clip(theta - 0.1 / (k + 1 + 10) ** 0.602 * g / (np.linalg.norm(g) + 1e-12), 0, 1)
+    return best_x, best_v, points
+
+
+def _refine(study, objective, proto: Protocol, floor: int) -> dict:
+    """SPSA from the best TPE trial, every evaluation an ordinary trial marked ``refine``. On resume
+    the stored refine trials are replayed in order (SPSA is deterministic) rather than rerun."""
+    if proto.refine == "none":
+        return {"refine_evals": 0, "refine_gain": 0.0}
+    start = _best(_complete(study))
+    dists = start.distributions
+    refine = [t for t in study.trials if "refine" in t.user_attrs]
+    stored = iter([t for t in refine if t.state == optuna.trial.TrialState.COMPLETE])
+    # an interrupted run can leave its last refine trial enqueued but never run
+    waiting = [t for t in refine if t.state == optuna.trial.TrialState.WAITING]
+
+    def f(u):
+        params = {k: _from_cube(x, d) for x, (k, d) in zip(u, dists.items())}
+        t = next(stored, None)
+        if t is None:
+            if not waiting:
+                study.enqueue_trial(params, user_attrs={"refine": True})
+            elif waiting.pop().system_attrs["fixed_params"] != params:
+                raise ValueError("a waiting refine trial does not match the SPSA point; use a new --out directory")
+            study.optimize(objective, n_trials=1)
+            t = study.trials[-1]
+        elif t.params != params:
+            raise ValueError("stored refine trials were started from a different TPE best; use a new --out directory")
+        return t.value
+
+    x0 = [_to_cube(start.params[k], d) for k, d in dists.items()]
+    points = _spsa(f, x0, int(proto.refine_frac * floor), proto.sampler_seed)[2]
+    gain = start.value - study.best_value if np.isfinite([start.value, study.best_value]).all() else 0.0
+    return {"refine_evals": len(points), "refine_gain": gain}
 
 
 _SERIES_CACHE: dict = {}
@@ -92,7 +175,8 @@ def _check_width(model, F, cmp):
 
 def tune_model(model: str, cmp: Comparison, proto: Protocol, sim: Sim, storage: str | None = None,
                log=print) -> dict:
-    """One Optuna study; with ``storage`` (sqlite:///file.db) the study is named after the model and resumes."""
+    """One Optuna study; with ``storage`` (sqlite:///file.db) the study is named after the model and resumes.
+    The record's ``n_trials``, ``trial_values`` and ``best_so_far`` include the refine trials."""
     cmp.check_models([model])
     spec = MODELS[model]
     data = {ds: _series(proto, ds) for ds in proto.tune_data_seeds}
@@ -134,7 +218,8 @@ def tune_model(model: str, cmp: Comparison, proto: Protocol, sim: Sim, storage: 
                                 storage=storage, study_name=model if storage else None,
                                 load_if_exists=storage is not None)
     fingerprint = json.dumps({"comparison": cmp.as_dict(), "sim": sim.as_dict(),
-                              "protocol": {k: v for k, v in proto.as_dict().items() if k not in BUDGET_KEYS}},
+                              "protocol": {k: v for k, v in proto.as_dict().items() if k not in BUDGET_KEYS
+                                           and not (proto.refine == "none" and k in ("refine", "refine_frac"))}},
                              sort_keys=True, default=list)
     stored = study.user_attrs.get("fingerprint")
     if stored is None:
@@ -144,13 +229,14 @@ def tune_model(model: str, cmp: Comparison, proto: Protocol, sim: Sim, storage: 
                          "use a new --out directory")
     t0 = time.perf_counter()
     budget = _run_budget(study, objective, proto)
+    budget |= _refine(study, objective, proto, budget["floor"])
     done = [t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE]
     best = study.best_trial
     space = {}
     for t in study.trials:
         space.update({k: json.loads(distribution_to_json(d)) for k, d in t.distributions.items()})
-    rec = {"model": model, "n_trials": len(done), "sampler": "TPE", "sampler_seed": proto.sampler_seed,
-           "search_space": space, "budget": budget,
+    rec = {"model": model, "n_trials": len(done), "sampler": "TPE+SPSA" if proto.refine == "spsa" else "TPE",
+           "sampler_seed": proto.sampler_seed, "search_space": space, "budget": budget,
            "best_params": best.user_attrs["params"], "best_alpha": best.params["alpha"],
            "best_trial": best.number, "best_val": best.value, "best_val_per_run": best.user_attrs["per_run"],
            "trial_values": [t.value for t in done], "trial_seconds": [t.user_attrs["seconds"] for t in done],
@@ -158,7 +244,9 @@ def tune_model(model: str, cmp: Comparison, proto: Protocol, sim: Sim, storage: 
            "study_seconds": round(time.perf_counter() - t0, 3)}
     log(f"  tuned {model:15s} val {best.value:.4f}  trials {rec['n_trials']} "
         f"({budget['n_dims']}d, floor {budget['floor']}, stopped on {budget['stopped']})  "
-        f"[{sum(rec['trial_seconds']):.0f}s in trials]")
+        f"[{sum(rec['trial_seconds']):.0f}s in trials]"
+        + (f" refine spsa: {budget['refine_evals']} evals, gain {budget['refine_gain']:.4g}"
+           if proto.refine == "spsa" else ""))
     return rec
 
 

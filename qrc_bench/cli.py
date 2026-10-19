@@ -105,7 +105,8 @@ def cmd_experiment(args, log=print):
                      tune_res_seeds=_seeds(args.tune_res_seeds), eval_data_seeds=_seeds(args.eval_data_seeds),
                      eval_res_seeds=_seeds(args.eval_res_seeds), n_trials=args.trials,
                      trials_per_dim=args.trials_per_dim, patience=args.patience, max_trials=args.max_trials,
-                     sampler_seed=args.sampler_seed, n_folds=args.folds, washout=args.washout)
+                     refine=args.refine, refine_frac=args.refine_frac, sampler_seed=args.sampler_seed,
+                     n_folds=args.folds, washout=args.washout)
     sim = Sim(method=args.method, backend=args.backend, precision=args.precision)
     run_comparison(cmp, proto, sim, models=args.models, out_dir=args.out, resume=args.resume, log=log)
 
@@ -180,7 +181,11 @@ def build_parser() -> argparse.ArgumentParser:
                                               "search space; default: the per-dimension rule below)")
     p.add_argument("--trials-per-dim", type=int, default=25, help="floor budget per tuned knob (default 25)")
     p.add_argument("--patience", type=int, default=50, help="stop a study after this many trials with no new best")
-    p.add_argument("--max-trials", type=int, default=300, help="cap on trials per model")
+    p.add_argument("--max-trials", type=int, default=300, help="cap on TPE trials per model")
+    p.add_argument("--refine", choices=["none", "spsa"], default="none",
+                   help="spsa: refine each model's best TPE trial with SPSA after the TPE stage")
+    p.add_argument("--refine-frac", type=float, default=0.5,
+                   help="SPSA evaluations as a fraction of the floor budget (default 0.5)")
     p.add_argument("--sampler-seed", type=int, default=0)
     p.add_argument("--folds", type=int, default=3)
     p.add_argument("--washout", type=int, default=50)

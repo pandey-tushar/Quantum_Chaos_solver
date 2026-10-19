@@ -88,7 +88,9 @@ class Protocol:
     n_trials: int | None = None      # fixed budget for every model; None uses the per-dimension rule
     trials_per_dim: int = 25         # floor budget = trials_per_dim x the model's own tuned knobs
     patience: int = 50               # stop once this many trials pass without a new best
-    max_trials: int = 300            # cap, whatever the rule
+    max_trials: int = 300            # cap on TPE trials per model
+    refine: str = "none"             # "spsa": refine the best TPE trial with SPSA after the TPE stage
+    refine_frac: float = 0.5         # SPSA evaluations = refine_frac x the floor budget
     sampler_seed: int = 0
     n_folds: int = 3
     val_frac: float = 0.10
@@ -101,6 +103,8 @@ class Protocol:
                            (self.tune_res_seeds, self.eval_res_seeds, "reservoir")):
             if set(a) & set(b):
                 raise ValueError(f"tuning and evaluation {what} seeds overlap: {sorted(set(a) & set(b))}")
+        if self.refine not in ("none", "spsa"):
+            raise ValueError(f"refine must be 'none' or 'spsa', got {self.refine!r}")
 
     def as_dict(self):
         return asdict(self)

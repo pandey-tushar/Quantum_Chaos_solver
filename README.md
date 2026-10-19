@@ -33,8 +33,10 @@ Exploratory branches that are not papers: `paper-3-chaoticity`, `paper-5-quantum
    rolling-origin folds and a standardised ridge readout. The budget is matched by *search
    density*, not by trial count: each model gets `--trials-per-dim` trials per knob it tunes and
    keeps going while it is still improving, because an equal count would search a one-knob model
-   exhaustively and a five-knob model sparsely. Convergence curves are recorded. Each model's best
-   setting is frozen and evaluated once on fresh data and reservoir seeds.
+   exhaustively and a five-knob model sparsely. Convergence curves are recorded. `--refine spsa`
+   then refines every model's best TPE trial with the same SPSA local search, for `--refine-frac` x
+   its floor budget of further trials. Each model's best setting is frozen and evaluated once on
+   fresh data and reservoir seeds.
 6. **Statistics:** paired comparisons at run and data-seed level, bootstrap confidence
    intervals, Wilcoxon, Holm correction. Comparisons against a model without a reservoir seed are
    flagged, as only their data-seed-level statistics are independent. Every result records trial
