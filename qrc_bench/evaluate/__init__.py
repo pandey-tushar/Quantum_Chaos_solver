@@ -25,16 +25,29 @@ def _nrmse(P, Y):
     return float(np.mean(np.sqrt(np.mean((P - Y) ** 2, axis=0)) / (np.std(Y, axis=0) + 1e-12)))
 
 
-def fit_predict(Ftr, Ytr, Fev, alpha, standardize=False):
-    """Ridge fit on (Ftr, Ytr), prediction for Fev. Standardised: z-score features and centre
-    the target with training statistics (constant columns become zero)."""
+def _ridge(Ftr, Ytr, alpha, standardize):
+    """Ridge fit on (Ftr, Ytr) -> predict(F). Standardised: z-score features and centre the target
+    with training statistics (constant columns become zero)."""
     if not standardize:
-        return Fev @ _fit(Ftr, Ytr, alpha)
+        W = _fit(Ftr, Ytr, alpha)
+        return lambda F: F @ W
     mu, sd = Ftr.mean(axis=0), Ftr.std(axis=0)
     sd = np.where(sd > 1e-12 * np.maximum(1.0, np.abs(mu)), sd, 1.0)
     ym = Ytr.mean(axis=0)
     W = _fit((Ftr - mu) / sd, Ytr - ym, alpha)
-    return ((Fev - mu) / sd) @ W + ym
+    return lambda F: ((F - mu) / sd) @ W + ym
+
+
+def fit_predict(Ftr, Ytr, Fev, alpha, standardize=False):
+    """Ridge fit on (Ftr, Ytr), prediction for Fev (see _ridge)."""
+    return _ridge(Ftr, Ytr, alpha, standardize)(Fev)
+
+
+def fit_readout(F, Y, horizon, alpha, standardize, washout, fit_end):
+    """The readout a fold fits: features of rows [washout, fit_end - horizon) against the targets
+    ``horizon`` steps later, so no target at or after fit_end is seen. Returns predict(F)."""
+    h = horizon
+    return _ridge(F[washout:fit_end - h], Y[washout + h:fit_end], alpha, standardize)
 
 
 def ridge_forecast(F, Y, horizon=1, train_frac=0.7, val_frac=0.15, alphas=ALPHAS) -> float:
@@ -107,7 +120,7 @@ def score_test(F, Y, horizon=1, alpha=1e-3, test_frac=0.15, standardize=True, wa
 def _score_fold(F, Y, h, alpha, fit_end, eval_end, standardize, washout):
     if eval_end - h <= fit_end or fit_end - h <= washout:
         return float("inf")
-    P = fit_predict(F[washout:fit_end - h], Y[washout + h:fit_end], F[fit_end:eval_end - h], alpha, standardize)
+    P = fit_readout(F, Y, h, alpha, standardize, washout, fit_end)(F[fit_end:eval_end - h])
     return _nrmse(P, Y[fit_end + h:eval_end])
 
 

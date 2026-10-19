@@ -1,4 +1,4 @@
-"""Command line: python -m qrc_bench {list, layout, reproduce, experiment, bench}."""
+"""Command line: python -m qrc_bench {list, layout, reproduce, experiment, freerun, bench}."""
 from __future__ import annotations
 
 import argparse
@@ -111,6 +111,13 @@ def cmd_experiment(args, log=print):
     run_comparison(cmp, proto, sim, models=args.models, out_dir=args.out, resume=args.resume, log=log)
 
 
+def cmd_freerun(args):
+    from qrc_bench.freerun import run_freerun
+
+    run_freerun(args.comparison, n_starts=args.starts, horizon_lt=args.horizon_lt, threshold=args.threshold,
+                out=args.out)
+
+
 def cmd_bench(args):
     from qrc_bench.bench import benchmark
 
@@ -198,6 +205,14 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--no-resume", dest="resume", action="store_false",
                    help="do not keep Optuna studies in SQLite under --out (default: keep and resume)")
     p.set_defaults(func=cmd_experiment)
+
+    p = sub.add_parser("freerun", help="free-running forecasts of a finished comparison's frozen models (VPT)")
+    p.add_argument("--comparison", required=True, help="comparison_<kind>.json written by experiment")
+    p.add_argument("--starts", type=int, default=20, help="start points spread over the test slice")
+    p.add_argument("--horizon-lt", type=float, default=10.0, help="forecast horizon in Lyapunov times")
+    p.add_argument("--threshold", type=float, default=0.5, help="NRMSE above which a forecast is no longer valid")
+    p.add_argument("--out", help="default: freerun_<kind>.json next to the comparison")
+    p.set_defaults(func=cmd_freerun)
 
     p = sub.add_parser("bench", help="time the reservoir simulators per step")
     p.add_argument("--layouts", nargs="+", default=["1:4", "5:3", "5:6"], metavar="N_IN:N_MEM")

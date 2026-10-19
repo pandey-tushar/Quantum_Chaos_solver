@@ -293,6 +293,33 @@ def environment() -> dict:
     return env
 
 
+def compare_to_qrc(scores: dict) -> dict:
+    """Paired statistics of the QRC against every other model, Holm-corrected across them.
+    ``scores[model]`` maps (data seed, reservoir seed) to a lower-is-better score; data seeds are
+    the clusters."""
+    key = list(scores["qrc"])
+    stats = {}
+    for m in scores:
+        if m == "qrc":
+            continue
+        s = paired_comparison([scores["qrc"][k] for k in key], [scores[m][k] for k in key], [k[0] for k in key])
+        # a model without a reservoir seed repeats one value across the reservoir seeds, so its runs
+        # are not independent: only the cluster-level statistics are valid for that comparison
+        s["run_level_independent"] = MODELS[m].uses_seed and MODELS["qrc"].uses_seed
+        stats[f"qrc_vs_{m}"] = s
+    if stats:
+        names = list(stats)
+        for label, field_ in (("p_holm_cluster", "p_t_cluster"), ("p_holm_run", "p_t_run")):
+            ps = [stats[n][field_] for n in names]
+            finite = [i for i, p in enumerate(ps) if np.isfinite(p)]
+            adj = holm([ps[i] for i in finite]) if finite else []
+            for n in names:
+                stats[n][label] = float("nan")
+            for i, a in zip(finite, adj):
+                stats[names[i]][label] = a
+    return stats
+
+
 def run_comparison(cmp: Comparison, proto: Protocol, sim: Sim, models=None, out_dir=None, resume: bool = False,
                    log=print) -> dict:
     models = list(models or cmp.default_models())
@@ -314,28 +341,8 @@ def run_comparison(cmp: Comparison, proto: Protocol, sim: Sim, models=None, out_
         result["models"][m] = {"tuning": tuning, "eval": ev}
     result["persistence"] = {str(ds): persistence_test(_series(proto, ds), proto.horizon, proto.test_frac)
                              for ds in proto.eval_data_seeds}
-    q_rows = result["models"]["qrc"]["eval"]
-    key = [(r["data_seed"], r["res_seed"]) for r in q_rows]
-    stats = {}
-    for m in models:
-        if m == "qrc":
-            continue
-        other = {(r["data_seed"], r["res_seed"]): r["test_nrmse"] for r in result["models"][m]["eval"]}
-        s = paired_comparison([r["test_nrmse"] for r in q_rows], [other[k] for k in key], [k[0] for k in key])
-        # a model without a reservoir seed repeats one value across the reservoir seeds, so its runs
-        # are not independent: only the cluster-level statistics are valid for that comparison
-        s["run_level_independent"] = MODELS[m].uses_seed and MODELS["qrc"].uses_seed
-        stats[f"qrc_vs_{m}"] = s
-    if stats:
-        names = list(stats)
-        for label, field_ in (("p_holm_cluster", "p_t_cluster"), ("p_holm_run", "p_t_run")):
-            ps = [stats[n][field_] for n in names]
-            finite = [i for i, p in enumerate(ps) if np.isfinite(p)]
-            adj = holm([ps[i] for i in finite]) if finite else []
-            for n in names:
-                stats[n][label] = float("nan")
-            for i, a in zip(finite, adj):
-                stats[names[i]][label] = a
+    stats = compare_to_qrc({m: {(r["data_seed"], r["res_seed"]): r["test_nrmse"] for r in result["models"][m]["eval"]}
+                            for m in models})
     result["stats"] = stats
     result["total_seconds"] = round(time.perf_counter() - t0, 3)
     if out_dir:

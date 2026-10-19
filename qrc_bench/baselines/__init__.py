@@ -46,22 +46,35 @@ def random_features(X: np.ndarray, width: int, seed: int, window: int = 1, scale
     return np.tanh(Z @ A.T + b)
 
 
+def esn_weights(n_inputs: int, n_res: int, seed: int, sr: float, in_scale: float, density: float,
+                bias_scale: float):
+    """(W_in, W, b) of esn_features, drawn in its order: W_in, W, then b (so bias_scale = 0 keeps earlier
+    draws), W rescaled to spectral radius sr."""
+    rng = np.random.default_rng(seed)
+    W_in = rng.uniform(-in_scale, in_scale, (n_res, n_inputs))
+    W = rng.standard_normal((n_res, n_res)) * (rng.uniform(0, 1, (n_res, n_res)) < density)
+    b = rng.uniform(-bias_scale, bias_scale, n_res)
+    e = np.max(np.abs(np.linalg.eigvals(W)))
+    if e > 1e-8:
+        W *= sr / e
+    return W_in, W, b
+
+
+def esn_step(r, x, W_in, W, b, leak):
+    """One ESN update of one stream: r (n_res,), x (n_inputs,)."""
+    return (1 - leak) * r + leak * np.tanh(W @ r + W_in @ x + b)
+
+
 @register("baseline", "esn")
 def esn_features(X: np.ndarray, n_res: int, seed: int, sr: float = 0.9, leak: float = 0.3,
                  in_scale: float = 0.5, density: float = 0.1, bias_scale: float = 0.0) -> np.ndarray:
     """r_t = (1 - leak) r_{t-1} + leak * tanh(W r_{t-1} + W_in x_t + b), W rescaled to spectral radius sr,
     b ~ U(-bias_scale, bias_scale). Without the bias every feature is odd in the input, so the readout
     cannot form squares or products of inputs."""
-    rng = np.random.default_rng(seed)
-    W_in = rng.uniform(-in_scale, in_scale, (n_res, X.shape[1]))
-    W = rng.standard_normal((n_res, n_res)) * (rng.uniform(0, 1, (n_res, n_res)) < density)
-    b = rng.uniform(-bias_scale, bias_scale, n_res)      # drawn last: bias_scale = 0 keeps earlier draws
-    e = np.max(np.abs(np.linalg.eigvals(W)))
-    if e > 1e-8:
-        W *= sr / e
+    W_in, W, b = esn_weights(X.shape[1], n_res, seed, sr, in_scale, density, bias_scale)
     r = np.zeros(n_res)
     out = np.zeros((len(X), n_res))
     for t in range(len(X)):
-        r = (1 - leak) * r + leak * np.tanh(W @ r + W_in @ X[t] + b)
+        r = esn_step(r, X[t], W_in, W, b, leak)
         out[t] = r
     return out

@@ -64,6 +64,21 @@ stay on the Z basis. `ZX` runs on `batched` only -- the reference simulators kno
 diagonal -- and holds a second unitary per reservoir on the device (134 MB more at q = 12 in
 single precision).
 
+**Free-running forecast.** `freerun --comparison PATH` takes every model of a finished comparison
+at its frozen best setting and lets it forecast on its own: from a start in the test slice it
+predicts the next state, feeds that prediction back as its next input, and repeats. The valid
+prediction time (VPT) is how many steps the forecast stays below the threshold (default 0.5) on the
+error divided by each series' test-slice std and averaged (RMS) over the series. It is reported in
+Lyapunov times, from the largest Lyapunov exponent of Lorenz-96 measured by the Benettin method on
+the same RK4 integrator that generates the data. Starts (default 20) lie in the test slice only;
+the readout is fit as for the test score. Recurrent models are warmed on the true data up to each
+start; window models start from the true last window. Shots are resampled at every step. VPT is
+compared with the same paired statistics as the test score. To step the recurrent QRC, its
+simulation now samples shots at every step instead of in 64-step blocks, so a recurrent run with
+shots and k_fb = 0 draws a different, equally valid noise realisation than it did before; no
+recorded cell is affected, as every recurrent cell tuned k_fb > 0 (and with feedback the shots
+were already sampled every step).
+
 ## Install
 
 ```bash
@@ -77,6 +92,7 @@ python -m qrc_bench list
 python -m qrc_bench layout --n-series 9 --encoding dense_rxrz --n-mem 3
 python -m qrc_bench experiment --task lorenz96 --task-arg n_series=10 --kind window \
     --input-window 3 --n-mem 2 --trials 100 --out results/l96_window
+python -m qrc_bench freerun --comparison results/l96_window/comparison_window.json --horizon-lt 10
 python -m qrc_bench bench --layouts 5:3 6:6 --steps 200
 ```
 

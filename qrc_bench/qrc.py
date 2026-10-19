@@ -125,24 +125,8 @@ def qrc_features(angles: np.ndarray, n_in: int, n_mem: int, reservoir, taus=(1.0
             raise ValueError("reference methods support only reset memory, numpy, double precision, one stream")
         return _loop_features(angles, n_in, n_mem, reservoir, taus, readout, mem_depth, k_fb, method)
 
-    xp = get_xp(backend)
-    dtype = PRECISIONS[precision]
-    real = np.float32 if precision == "single" else np.float64
-    z_np, zz_np = sign_tables(q)
-    z_signs, zz_signs = xp.asarray(z_np, dtype=real), xp.asarray(zz_np, dtype=real)
-    zbar = z_signs.mean(axis=0)
-    bases = readout_bases(readout)
-
-    def readout_fn(P):
-        return readout_matrix(P, readout, z_signs, zz_signs, xp)
-
-    shot_rng = xp.random.default_rng(shot_seed) if shots is not None else None
-    per_basis = None if shots is None else shots // len(bases)
-
-    def sample(P):                                  # one generator = one realisation per call
-        return sample_probs(P, per_basis, shot_rng, xp)
-
-    x_basis = "X" in bases
+    xp, dtype, real, zbar, readout_fn, sample, x_basis = _readout_setup(q, readout, backend, precision,
+                                                                        shots, shot_seed)
     ang = xp.asarray(angles, dtype=real)
     if not stacked:
         ang = ang[None]
@@ -158,12 +142,71 @@ def qrc_features(angles: np.ndarray, n_in: int, n_mem: int, reservoir, taus=(1.0
                                          resolve_budget_mb(mem_budget_mb, backend, reserve_mb), x_basis)
         blocks.append(batched.simulate(ang, U, n_in, n_mem, readout_fn, xp, dtype=dtype, memory=memory,
                                        mem_depth=mem_depth, k_fb=k_fb, zbar=zbar, chunk_size=chunk,
-                                       sample=None if shots is None else sample, x_basis=x_basis))
+                                       sample=sample, x_basis=x_basis))
         del U
     F = to_numpy(xp.concatenate(blocks, axis=2)).astype(np.float64)
     if multi:
         return F.reshape(*lead, *F.shape[1:])
     return F if stacked else F[0]
+
+
+def _readout_setup(q, readout, backend, precision, shots, shot_seed):
+    """(xp, dtype, real dtype, zbar, readout_fn, sample or None, x_basis) for a resolved backend and
+    precision. ``sample`` draws from one generator seeded by ``shot_seed``: one realisation per call."""
+    xp = get_xp(backend)
+    dtype = PRECISIONS[precision]
+    real = np.float32 if precision == "single" else np.float64
+    z_np, zz_np = sign_tables(q)
+    z_signs, zz_signs = xp.asarray(z_np, dtype=real), xp.asarray(zz_np, dtype=real)
+    zbar = z_signs.mean(axis=0)
+    bases = readout_bases(readout)
+
+    def readout_fn(P):
+        return readout_matrix(P, readout, z_signs, zz_signs, xp)
+
+    sample = None
+    if shots is not None:
+        shot_rng = xp.random.default_rng(shot_seed)
+        per_basis = shots // len(bases)
+
+        def sample(P):
+            return sample_probs(P, per_basis, shot_rng, xp)
+
+    return xp, dtype, real, zbar, readout_fn, sample, "X" in bases
+
+
+class RecurrentQRC:
+    """The recurrent QRC of qrc_features (memory='recurrent', method='batched') over ``n_streams``
+    streams, advanced one input step at a time: one batched.RecurrentStepper per tau, all sharing
+    one shot sampler. With one tau and the same shot_seed it reproduces qrc_features bit for bit;
+    with several taus the taus draw their shots in turn each step, a different but equally valid
+    realisation. Host angles (B, n_in[, 2]) in, host float64 features (B, F) out.
+    ``snapshot`` / ``restore`` fork the state of every tau (see RecurrentStepper)."""
+
+    def __init__(self, n_in: int, n_mem: int, reservoir, n_streams: int, taus=(1.0,), readout: str = "ZZ",
+                 k_fb: float = 0.0, backend: str = "numpy", precision: str = "auto", shots: int | None = None,
+                 shot_seed: int = 0):
+        q = n_in + n_mem
+        if reservoir.q != q:
+            raise ValueError(f"reservoir has q={reservoir.q}, layout needs {n_in} + {n_mem}")
+        backend = resolve_backend(backend, q)
+        precision = resolve_precision(precision, backend)
+        self.xp, dtype, self.real, zbar, readout_fn, sample, x_basis = _readout_setup(
+            q, readout, backend, precision, shots, shot_seed)
+        self.steppers = [batched.RecurrentStepper(
+            batched.Driver(reservoir.unitary(tau, xp=self.xp, dtype=dtype), n_in, n_mem, self.xp, dtype,
+                           x_basis=x_basis), n_streams, readout_fn, k_fb, zbar, sample) for tau in taus]
+
+    def step(self, angles) -> np.ndarray:
+        ang = self.xp.asarray(angles, dtype=self.real)
+        return to_numpy(self.xp.concatenate([s.step(ang) for s in self.steppers], axis=1)).astype(np.float64)
+
+    def snapshot(self):
+        return [s.snapshot() for s in self.steppers]
+
+    def restore(self, snaps):
+        for k, s in enumerate(self.steppers):
+            s.restore([snap[k] for snap in snaps])
 
 
 def _unitaries(reservoirs, tau, xp, dtype, multi):

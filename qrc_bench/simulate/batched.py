@@ -20,6 +20,8 @@ Memory modes:
              All (stream, step) windows of a chunk run as one batch.
   recurrent  the memory state is carried forward, one drive per step (a true recurrent reservoir);
              all streams advance together; its trace is renormalised each step against round-off.
+             ``RecurrentStepper`` holds that state and is the whole of the recurrent path, so a
+             free-running forecast that steps it one input at a time runs the same code.
 Feedback shifts each stream's R_Y drive by k_fb * tanh(mean <Z> of that stream's previous step).
 
 On cupy three fused kernels carry the elementwise work: the product state (with the feedback shift
@@ -33,7 +35,6 @@ import numpy as np
 from qrc_bench.encoders import shift_ry
 
 MEMORY_MODES = ("reset", "recurrent")
-READOUT_BLOCK = 64          # recurrent: steps of probabilities buffered before one batched readout
 
 # amplitude of basis state j = prod_a [bit_a(j) ? sin(ry_a / 2) : cos(ry_a / 2)] * exp(-+ i rz_a / 2),
 # with the feedback shift k_fb * tanh(mbar_b) on the R_Y angles and every angle then clipped.
@@ -274,6 +275,44 @@ class Driver:
         return (kind, S[idx])
 
 
+class RecurrentStepper:
+    """A recurrent-memory reservoir over B streams advanced one input step at a time: the memory
+    state, the feedback signal mbar and the shared sampler. ``step`` drives, samples (every step,
+    so the readout and the feedback read the same measured distribution) and reads out.
+    ``snapshot`` / ``restore`` fork the state: snapshots taken at several steps (of equal-shaped
+    states: same kind and shape) are concatenated along the batch into one new batch."""
+
+    def __init__(self, drv: Driver, n_streams, readout_fn, k_fb=0.0, zbar=None, sample=None):
+        self.drv, self.readout_fn, self.k_fb, self.zbar, self.sample = drv, readout_fn, k_fb, zbar, sample
+        self.state = drv.fresh_memory(n_streams)
+        self.mbar = drv.xp.zeros(n_streams, dtype=drv.xp.float32 if drv.dtype == np.complex64 else drv.xp.float64)
+
+    def step(self, angles):
+        """angles (B, n_in[, 2]) device array -> features (B, F) device array."""
+        feedback = self.k_fb != 0.0
+        psi = product_states(angles, self.drv.xp, self.drv.dtype, self.k_fb, self.mbar if feedback else None)
+        self.state, P = self.drv.step(self.state, psi, renormalise=True)
+        if self.sample is not None:
+            P = _each(self.sample, P)
+        if feedback:
+            self.mbar = _z_basis(P) @ self.zbar
+        return self.readout_fn(P)
+
+    def snapshot(self):
+        return self.state, self.mbar        # step replaces both arrays, never writes into them
+
+    def restore(self, snaps):
+        xp = self.drv.xp
+        kinds = {kind for (kind, _), _ in snaps}
+        if len(kinds) != 1:
+            raise ValueError(f"cannot batch snapshots of memory kinds {sorted(kinds)}")
+        shapes = {S.shape[1:] for (_, S), _ in snaps}
+        if len(shapes) != 1:
+            raise ValueError(f"cannot batch snapshots of memory state shapes {sorted(shapes)}")
+        self.state = (kinds.pop(), xp.concatenate([S for (_, S), _ in snaps]))
+        self.mbar = xp.concatenate([m for _, m in snaps])
+
+
 def simulate(angles, U, n_in, n_mem, readout_fn, xp, dtype=np.complex128, memory="reset",
              mem_depth=3, k_fb=0.0, zbar=None, chunk_size=256, sample=None, x_basis=False):
     """Features for every stream and step. angles: (S, T, n_in[, 2]) device array;
@@ -300,27 +339,11 @@ def simulate(angles, U, n_in, n_mem, readout_fn, xp, dtype=np.complex128, memory
     def psi_of(ang, mb=None):                                  # mb: feed the previous step's mbar
         return product_states(ang.reshape(-1, *tail), xp, dtype, k_fb, mb)
 
-    rows = []
     if memory == "recurrent":
-        state = drv.fresh_memory(S)
-        for b0 in range(0, T, READOUT_BLOCK):
-            b1 = min(T, b0 + READOUT_BLOCK)
-            psis = None if feedback else psi_of(angles[:, b0:b1].swapaxes(0, 1))
-            buf = []
-            for k, t in enumerate(range(b0, b1)):
-                psi = psi_of(angles[:, t], mbar) if feedback else psis[k * S:(k + 1) * S]
-                state, P = drv.step(state, psi, renormalise=True)
-                if feedback:
-                    if sample is not None:
-                        P = _each(sample, P)
-                    mbar = _z_basis(P) @ zbar
-                buf.append(P)
-            Pb = _stack_steps(buf, S * (b1 - b0), xp)              # (S, k, D) flattened
-            if sample is not None and not feedback:
-                Pb = _each(sample, Pb)                             # whole block at once: fewer launches
-            rows.append(readout_fn(Pb).reshape(S, b1 - b0, -1))
-        return xp.concatenate(rows, axis=1)
+        stepper = RecurrentStepper(drv, S, readout_fn, k_fb, zbar, sample)
+        return xp.stack([stepper.step(angles[:, t]) for t in range(T)], axis=1)
 
+    rows = []
     steps = max(1, chunk_size // S)
     for c0 in range(0, T, steps):
         ts = np.arange(c0, min(T, c0 + steps))

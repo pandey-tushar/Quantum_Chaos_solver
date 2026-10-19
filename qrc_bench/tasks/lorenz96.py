@@ -20,6 +20,15 @@ def _l96_rhs(x, forcing):
     return (x[p1] - x[m2]) * x[m1] - x + forcing
 
 
+def rk4_step(x, forcing, dt):
+    """One RK4 step of length dt. ``x`` is (n_series,) or (n_series, n_traj), one trajectory per column."""
+    k1 = _l96_rhs(x, forcing)
+    k2 = _l96_rhs(x + 0.5 * dt * k1, forcing)
+    k3 = _l96_rhs(x + 0.5 * dt * k2, forcing)
+    k4 = _l96_rhs(x + dt * k3, forcing)
+    return x + dt / 6.0 * (k1 + 2 * k2 + 2 * k3 + k4)
+
+
 @register("task", "lorenz96")
 def lorenz96(n_steps: int, seed: int, n_series: int = 10, forcing: float = 8.0, dt: float = 0.01,
              sample_every: int = 5, obs_noise: float = 0.0, burn: int = 1000):
@@ -30,11 +39,7 @@ def lorenz96(n_steps: int, seed: int, n_series: int = 10, forcing: float = 8.0, 
     out = np.zeros((n_steps + burn, n_series))
     for i in range(n_steps + burn):
         for _ in range(sample_every):
-            k1 = _l96_rhs(x, forcing)
-            k2 = _l96_rhs(x + 0.5 * dt * k1, forcing)
-            k3 = _l96_rhs(x + 0.5 * dt * k2, forcing)
-            k4 = _l96_rhs(x + dt * k3, forcing)
-            x = x + dt / 6.0 * (k1 + 2 * k2 + 2 * k3 + k4)
+            x = rk4_step(x, forcing, dt)
         out[i] = x
     X = out[burn:]
     if obs_noise > 0:
