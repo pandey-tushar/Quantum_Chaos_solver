@@ -1,0 +1,89 @@
+\begin{thebibliography}{10}
+
+\bibitem{fujii2017}
+Keisuke Fujii and Kohei Nakajima.
+\newblock Harnessing disordered-ensemble quantum dynamics for machine learning.
+\newblock {\em Physical Review Applied}, 8:024030, 2017.
+\newblock arXiv:1602.08159.
+
+\bibitem{ahmed2024}
+Osama Ahmed, Felix Tennie, and Luca Magri.
+\newblock Prediction of chaotic dynamics and extreme events: A recurrence-free
+  quantum reservoir computing approach, 2024.
+\newblock arXiv:2405.03390.
+
+\bibitem{kobayashi2024}
+Kaito Kobayashi, Keisuke Fujii, and Naoki Yamamoto.
+\newblock Feedback-driven quantum reservoir computing for time-series analysis.
+\newblock {\em PRX Quantum}, 5:040325, 2024.
+\newblock arXiv:2406.15783.
+
+\bibitem{nguyen2026}
+Phi~Hung Nguyen and Daniel Soh.
+\newblock Quantum-fisher-information-aware optimization yields a quantum
+  reservoir advantage over tuned classical reservoirs, 2026.
+\newblock arXiv:2610.14454.
+
+\bibitem{pandey2026cartography}
+Tushar Pandey.
+\newblock When classical baselines are tuned as carefully as the quantum model,
+  does quantum reservoir computing still win?, 2026.
+\newblock arXiv:2607.09905.
+
+\bibitem{pandey2026qra}
+Tushar Pandey.
+\newblock A quantum reservoir architecture for chaotic forecasting and a test
+  of whether its high dimension helps, 2026.
+\newblock arXiv:2607.07978.
+
+\bibitem{pandey2026qpinn}
+Tushar Pandey.
+\newblock An architectural capacity ceiling, not a barren plateau: why a
+  fixed-encoding variational quantum circuit cannot fit the {Lorenz-63}
+  attractor, 2026.
+\newblock arXiv:2604.23743.
+
+\bibitem{martinezpena2021}
+Rodrigo Mart\'inez-Pe\ na, Gian~Luca Giorgi, Johannes Nokkala, Miguel~C.
+  Soriano, and Roberta Zambrini.
+\newblock Dynamical phase transitions in quantum reservoir computing.
+\newblock {\em Physical Review Letters}, 127:100502, 2021.
+\newblock arXiv:2103.05348.
+
+\bibitem{mujal2023}
+Pere Mujal, Rodrigo Mart\'inez-Pe\ na, Gian~Luca Giorgi, Miguel~C. Soriano, and
+  Roberta Zambrini.
+\newblock Time series quantum reservoir computing with weak and projective
+  measurements.
+\newblock {\em npj Quantum Information}, 9:16, 2023.
+\newblock arXiv:2205.06809.
+
+\bibitem{hu2023}
+Fangjun Hu, Gerasimos Angelatos, Saeed~A. Khan, Marti Vives, Esin T\"ureci,
+  Leon Bello, Graham~E. Rowlands, Guilhem~J. Ribeill, and Hakan~E. T\"ureci.
+\newblock Quantifying the expressive capacity of quantum systems: Fundamental
+  limits and eigentasks.
+\newblock {\em Physical Review X}, 13:041020, 2023.
+\newblock arXiv:2301.00042.
+
+\bibitem{hamhoum2025}
+Wissal Hamhoum, Soumaya Cherkaoui, Jean-Frederic Laprade, Ola Ahmad, and
+  Shengrui Wang.
+\newblock Multivariate time series forecasting with gate-based quantum
+  reservoir computing on {NISQ} hardware, 2025.
+\newblock arXiv:2510.13634.
+
+\bibitem{akiba2019}
+Takuya Akiba, Shotaro Sano, Toshihiko Yanase, Takeru Ohta, and Masanori Koyama.
+\newblock Optuna: A next-generation hyperparameter optimization framework,
+  2019.
+\newblock arXiv:1907.10902.
+
+\bibitem{vlachas2020}
+P.~R. Vlachas, J.~Pathak, B.~R. Hunt, T.~P. Sapsis, M.~Girvan, E.~Ott, and
+  P.~Koumoutsakos.
+\newblock Backpropagation algorithms and reservoir computing in recurrent
+  neural networks for the forecasting of complex spatiotemporal dynamics, 2020.
+\newblock arXiv:1910.05266.
+
+\end{thebibliography}
